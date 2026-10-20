@@ -12,8 +12,10 @@ in an interactive page you can open in any browser.
 [![No dependencies](https://img.shields.io/badge/modules-none-success)](#requirements)
 [![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-server-on-premises)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/DasCondor/ado-work-map?label=release)](https://github.com/DasCondor/ado-work-map/releases/latest)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/DasCondor.ado-work-map?label=VS%20Code%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
-### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/)
+### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Get the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
 <img src="docs/images/delivery-map.png" alt="Delivery map: epics on the left, the selected epic's features and stories with progress bars on the right" width="900">
 
@@ -128,11 +130,13 @@ run_ado_work_map.cmd -Demo
 
 Everything above, inside VS Code: the **ADO Work Map** extension bundles the script and gives it a launch pad in the sidebar, Command Palette commands, VS Code settings, a status bar item showing your last pull, and the report in an editor tab. Your token is kept in VS Code's secret storage (Windows Credential Manager) instead of a file.
 
-**Install:** download `ado-work-map-<version>.vsix` from the [latest release](https://github.com/DasCondor/ado-work-map/releases/latest), then in VS Code open the Extensions view, click **...** > **Install from VSIX...** and pick the file. Or from a terminal:
+**Install from the Marketplace:** search for **ADO Work Map** in the Extensions view, or run:
 
 ```bat
-code --install-extension ado-work-map-1.0.0.vsix
+code --install-extension DasCondor.ado-work-map
 ```
+
+**Or from GitHub:** download the `.vsix` from the [latest release](https://github.com/DasCondor/ado-work-map/releases/latest), then in VS Code open the Extensions view, click **...** > **Install from VSIX...** and pick the file. Updates install the same way.
 
 Then click the **ADO Work Map** icon in the Activity Bar and follow the checklist. To build the `.vsix` yourself (no Node.js needed): `powershell -ExecutionPolicy Bypass -File vscode-extension\build.ps1`.
 
