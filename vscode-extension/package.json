@@ -2,7 +2,7 @@
   "name": "ado-work-map",
   "displayName": "ADO Work Map",
   "description": "Self-contained Azure DevOps work map: delivery map, sprints, changes, maps and a spider web of your work and repos, in one offline HTML report.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "DasCondor",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -53,7 +53,7 @@
     "configuration": {
       "title": "ADO Work Map",
       "properties": {
-        "adoWorkMap.organization": { "type": "string", "default": "", "order": 1, "markdownDescription": "Your Azure DevOps organization: the part after `https://dev.azure.com/`. For Azure DevOps Server, the collection name." },
+        "adoWorkMap.organization": { "type": "string", "default": "", "order": 1, "markdownDescription": "Your Azure DevOps organization: the part after `https://dev.azure.com/`, e.g. `contoso`. Pasting the whole address (even with the project on the end) works too. For Azure DevOps Server, the collection name." },
         "adoWorkMap.project": { "type": "string", "default": "", "order": 2, "description": "The Azure DevOps project." },
         "adoWorkMap.team": { "type": "string", "default": "", "order": 3, "markdownDescription": "Team whose sprints are shown. Empty = `<project> Team`." },
         "adoWorkMap.iteration": { "type": "string", "default": "", "order": 4, "markdownDescription": "Treat this iteration path as the current sprint, e.g. `Project\\Sprint 14`. Empty = the team's current sprint." },

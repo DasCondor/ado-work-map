@@ -140,6 +140,19 @@ if (-not $Demo -and (Test-Path $ConfigPath)) {
     }
     Write-Host "Using settings from $ConfigPath"
 }
+# Accept a pasted address as the organization: https://dev.azure.com/<org>[/<project>] or
+# https://<org>.visualstudio.com[/<project>] (a common mix-up that otherwise breaks every URL)
+if ($Org -and $Org.Trim() -match '^https?://') {
+    $u = [uri]$Org.Trim()
+    $segs = @($u.AbsolutePath.Trim('/').Split('/') | Where-Object { $_ } | ForEach-Object { [uri]::UnescapeDataString($_) })
+    if ($u.Host -eq 'dev.azure.com' -and $segs.Count) { $Org = $segs[0]; $segs = @($segs | Select-Object -Skip 1) }
+    elseif ($u.Host -match '^([^.]+)\.visualstudio\.com$') { $Org = $Matches[1] }
+    else { throw "Organization looks like a web address ($Org). Use just the organization name; for Azure DevOps Server also set -ServerUrl." }
+    if (-not $Project -and $segs.Count -and $segs[0] -notmatch '^_') { $Project = $segs[0] }
+    Write-Host "Using organization '$Org'$(if ($Project) { " and project '$Project'" }) from the address given."
+}
+$Org = "$Org".Trim().Trim('/'); $Project = "$Project".Trim().Trim('/')
+
 # Lists arrive as one "a,b,c" string when launched with powershell.exe -File (e.g. from the .cmd starter)
 $EpicId = @($EpicId | ForEach-Object { "$_" -split '[,; ]+' } | Where-Object { $_ } | ForEach-Object { [int]$_ })
 $Types = @($Types | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -1377,6 +1390,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
       <div class="card" id="kinds"></div>
       <div class="card">
         <label><input type="checkbox" id="g-hidedone"> Hide accomplished</label>
+        <div class="sub" style="margin:2px 0 0 22px">Hides work items that are done, and the links that only lead to them. Commits, branches and PRs linked to work that's still open stay visible: commits have no done state of their own, and they show where open work has already touched the code. Untick <b>Commit</b> above to hide them.</div>
         <div style="margin-top:8px"><button class="btn" id="relayout">Re-layout</button></div>
         <div class="sub" style="margin-top:8px">The filter bar applies here too. Green ring = done. Dashed = related, red arrow = dependency. In the overview, thick grey lines are repo links rolled up from everything under a feature. Double-click a work item to focus on its tree.</div>
       </div>
@@ -2008,6 +2022,20 @@ function MiniGraph(host, NS, ES, fg) {
   const view = {x: 0, y: 0, k: 1}, handlers = {}, doneQueue = [];
   const size = id => NS.get(id).size || 10;
   const dbBox = id => { const s = NS.get(id); ctx.font = '600 14px system-ui,Segoe UI,sans-serif'; return {w: ctx.measureText(s.label).width + 22, h: 38}; };
+  // Space each node takes with its label, in graph units: w x h, centred oy below the node's centre.
+  // The layout keeps these boxes apart, so text size is part of the layout, not just the dots.
+  const boxes = new Map();
+  function box(id) {
+    let b = boxes.get(id); if (b) return b;
+    const s = NS.get(id), r = size(id);
+    if (s.shape === 'database') { const d = dbBox(id); b = {w: d.w + 8, h: d.h + 8, oy: 0}; }
+    else {
+      ctx.font = `${s.font.bold ? '600 ' : ''}${s.font.size}px system-ui,Segoe UI,sans-serif`;
+      const tw = s.label ? ctx.measureText(s.label).width : 0, top = -r * 1.25, bottom = r * 1.25 + 3 + (s.label ? s.font.size * 1.3 : 0);
+      b = {w: Math.max(r * 2.5, tw) + 10, h: bottom - top + 6, oy: (top + bottom) / 2};
+    }
+    boxes.set(id, b); return b;
+  }
 
   function resize() {
     dpr = window.devicePixelRatio || 1; W = host.clientWidth; H = host.clientHeight;
@@ -2055,11 +2083,37 @@ function MiniGraph(host, NS, ES, fg) {
       shapePath(id, p); ctx.fillStyle = s.bg; ctx.fill();
       ctx.lineWidth = id === sel ? 3 : s.bw; ctx.strokeStyle = id === sel ? fg : s.border; ctx.stroke();
     }
-    for (const id of ids) {
-      const p = P.get(id), s = NS.get(id); if (!p || !s.label || s.font.size * view.k < 6) continue;
-      ctx.font = `${s.font.bold ? '600 ' : ''}${s.font.size}px system-ui,Segoe UI,sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = s.font.color;
-      if (s.shape === 'database') { ctx.textBaseline = 'middle'; ctx.fillText(s.label, p.x, p.y + 2); }
-      else { ctx.textBaseline = 'top'; ctx.fillText(s.label, p.x, p.y + size(id) * 1.25 + 3); }
+    // Labels: biggest items first (repos, epics, features), and skip any that would overlap one
+    // already drawn, so text stays readable at any zoom. Zoom in to see the rest.
+    const order = ids.filter(id => NS.get(id).label).sort((a, b) =>
+      (b === sel) - (a === sel) || (NS.get(b).shape === 'database') - (NS.get(a).shape === 'database') || size(b) - size(a));
+    const taken = new Map(), cellPx = 80, k = view.k;
+    const hits = (x0, y0, x1, y1, add) => {
+      for (let gx = Math.floor(x0 / cellPx); gx <= Math.floor(x1 / cellPx); gx++) for (let gy = Math.floor(y0 / cellPx); gy <= Math.floor(y1 / cellPx); gy++) {
+        const key = gx * 100003 + gy, l = taken.get(key);
+        if (add) { if (l) l.push([x0, y0, x1, y1]); else taken.set(key, [[x0, y0, x1, y1]]); }
+        else if (l && l.some(r => r[0] < x1 && r[2] > x0 && r[1] < y1 && r[3] > y0)) return true;
+      }
+      return false;
+    };
+    // Labels are drawn in screen pixels: never smaller than MIN_LABEL_PX, so they stay readable
+    // when a big graph is zoomed out to fit (e.g. a narrow VS Code panel)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const MIN_LABEL_PX = 9.5;
+    for (const id of order) {
+      const p = P.get(id), s = NS.get(id); if (!p) continue;
+      if (s.font.size * k < 3 && id !== sel) continue;   // very far out: dots only, zoom in for names
+      const db = s.shape === 'database', fs = db ? Math.max(9, s.font.size * k) : Math.max(MIN_LABEL_PX, s.font.size * k);
+      ctx.font = `${s.font.bold ? '600 ' : ''}${fs}px system-ui,Segoe UI,sans-serif`;
+      const tw = ctx.measureText(s.label).width, cx = view.x + p.x * k;
+      const top = db ? view.y + p.y * k - fs * .62 : view.y + (p.y + size(id) * 1.25) * k + 3;
+      const sx0 = cx - tw / 2 - 2, sx1 = cx + tw / 2 + 2, sy0 = top - 1, sy1 = top + fs * 1.2 + 1;
+      if (sx1 < 0 || sy1 < 0 || sx0 > W || sy0 > H) continue;
+      if (!db && id !== sel && hits(sx0, sy0, sx1, sy1, false)) continue;
+      if (db && tw > dbBox(id).w * k) continue;   // repo name doesn't fit its shape at this zoom
+      hits(sx0, sy0, sx1, sy1, true);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = s.font.color;
+      ctx.fillText(s.label, cx, top);
     }
   }
   const schedulePaint = () => { if (!running) requestAnimationFrame(paint); };
@@ -2080,8 +2134,9 @@ function MiniGraph(host, NS, ES, fg) {
   function fit() {
     if (!ids.length || !W) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    ids.forEach(id => { const p = P.get(id); x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); });
-    view.k = Math.min(1.6, Math.max(.04, Math.min(W / (x1 - x0 + 120), H / (y1 - y0 + 120))));
+    ids.forEach(id => { const p = P.get(id), b = box(id);   // include the labels, so none are cut off at the edges
+      x0 = Math.min(x0, p.x - b.w / 2); x1 = Math.max(x1, p.x + b.w / 2); y0 = Math.min(y0, p.y + b.oy - b.h / 2); y1 = Math.max(y1, p.y + b.oy + b.h / 2); });
+    view.k = Math.min(1.6, Math.max(.04, Math.min(W / (x1 - x0 + 40), H / (y1 - y0 + 40))));
     view.x = W / 2 - view.k * (x0 + x1) / 2; view.y = H / 2 - view.k * (y0 + y1) / 2;
   }
   function layout(iters, onProgress) {
@@ -2092,6 +2147,9 @@ function MiniGraph(host, NS, ES, fg) {
     ids.forEach((id, i) => { const p = P.get(id); X[i] = p.x; Y[i] = p.y; M[i] = NS.get(id).mass || 1; });
     const E = []; eids.forEach(e => { const s = ES.get(e), a = idx.get(s.from), b = idx.get(s.to); if (a != null && b != null) E.push(a, b); });
     const rest = 95, kSpring = .035, kRep = 3600, cell = 170, grav = .005, damp = .8;
+    const BW = new Float64Array(n), BH = new Float64Array(n), BO = new Float64Array(n);
+    ids.forEach((id, i) => { const b = box(id); BW[i] = b.w; BH[i] = b.h; BO[i] = b.oy; });
+    let cc = cell; for (let i = 0; i < n; i++) cc = Math.max(cc, BW[i], BH[i]); cc = Math.min(cc, 420);
     let it = 0; running = true;
     const step = () => {
       // Work in ~14 ms slices, so the page stays responsive (and it keeps going where animation frames are throttled)
@@ -2123,6 +2181,26 @@ function MiniGraph(host, NS, ES, fg) {
           VX[i] = (VX[i] + (FX[i] - X[i] * grav) / M[i]) * damp; VY[i] = (VY[i] + (FY[i] - Y[i] * grav) / M[i]) * damp;
           const v = Math.hypot(VX[i], VY[i]); if (v > maxV) { VX[i] *= maxV / v; VY[i] *= maxV / v; }
           X[i] += VX[i]; Y[i] += VY[i];
+        }
+        // Once the rough shape has formed, push apart any node + label boxes that overlap
+        if (it > iters * .2) {
+          const g2 = new Map();
+          for (let i = 0; i < n; i++) { const k = Math.floor(X[i] / cc) * 100003 + Math.floor((Y[i] + BO[i]) / cc); let c = g2.get(k); if (!c) g2.set(k, c = []); c.push(i); }
+          for (let i = 0; i < n; i++) {
+            const cx = Math.floor(X[i] / cc), cy = Math.floor((Y[i] + BO[i]) / cc);
+            for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
+              const c = g2.get(gx * 100003 + gy); if (!c) continue;
+              for (const j of c) {
+                if (j <= i) continue;
+                const dx = X[j] - X[i], dy = (Y[j] + BO[j]) - (Y[i] + BO[i]);
+                const ox = (BW[i] + BW[j]) / 2 - Math.abs(dx), oy = (BH[i] + BH[j]) / 2 - Math.abs(dy);
+                if (ox <= 0 || oy <= 0) continue;
+                const wi = M[j] / (M[i] + M[j]), wj = 1 - wi;   // heavier nodes (repos) move less
+                if (ox < oy) { const s = (ox * .55 + .3) * (dx ? Math.sign(dx) : (Math.random() < .5 ? -1 : 1)); X[i] -= s * wi; X[j] += s * wj; }
+                else { const s = (oy * .55 + .3) * (dy ? Math.sign(dy) : (Math.random() < .5 ? -1 : 1)); Y[i] -= s * wi; Y[j] += s * wj; }
+              }
+            }
+          }
         }
       }
       ids.forEach((id, i) => { const p = P.get(id); p.x = X[i]; p.y = Y[i]; });

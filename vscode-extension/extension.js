@@ -25,16 +25,30 @@ const ACTIONS = {
 
 // ---------- settings and paths ----------
 const cfg = () => vscode.workspace.getConfiguration('adoWorkMap');
+// Organization and project, also accepting a pasted address such as
+// https://dev.azure.com/<org>/<project> or https://<org>.visualstudio.com
+function orgProject() {
+  let org = String(cfg().get('organization') || '').trim(), project = String(cfg().get('project') || '').trim();
+  if (/^https?:\/\//i.test(org)) {
+    try {
+      const u = new URL(org), segs = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      if (u.hostname === 'dev.azure.com' && segs.length) org = segs.shift();
+      else { const m = /^([^.]+)\.visualstudio\.com$/i.exec(u.hostname); if (m) org = m[1]; }
+      if (!project && segs.length && !segs[0].startsWith('_')) project = segs[0];
+    } catch (e) { }
+  }
+  return { org: org.replace(/\/+$/, ''), project: project.replace(/\/+$/, '') };
+}
 function dataDir() {
   const custom = (cfg().get('dataFolder') || '').trim();
   if (custom) return custom;
-  const c = cfg(), name = `${c.get('organization') || 'org'}_${c.get('project') || 'project'}`.replace(/[^\w.-]+/g, '_');
+  const op = orgProject(), name = `${op.org || 'org'}_${op.project || 'project'}`.replace(/[^\w.-]+/g, '_');
   return path.join(ctx.globalStorageUri.fsPath, name);
 }
 const demoDir = () => path.join(ctx.globalStorageUri.fsPath, 'demo');
 const reportPath = demo => path.join(demo ? demoDir() : dataDir(), 'ado_work_map.html');
 const scriptPath = () => ctx.asAbsolutePath(path.join('resources', 'ado_work_map.ps1'));
-const settingsMissing = () => ['organization', 'project'].filter(k => !(cfg().get(k) || '').trim());
+const settingsMissing = () => { const op = orgProject(); return [['organization', op.org], ['project', op.project]].filter(x => !x[1]).map(x => x[0]); };
 
 function buildArgs(action, extra) {
   const c = cfg(), out = action === 'demo' ? demoDir() : dataDir();
@@ -42,7 +56,8 @@ function buildArgs(action, extra) {
     '-OutDir', out, '-ConfigPath', path.join(out, 'no-config.json')];
   if (action !== 'demo') {
     const s = (flag, v) => { v = String(v == null ? '' : v).trim(); if (v) a.push(flag, v); };
-    s('-Org', c.get('organization')); s('-Project', c.get('project')); s('-Team', c.get('team'));
+    const op = orgProject();
+    s('-Org', op.org); s('-Project', op.project); s('-Team', c.get('team'));
     s('-Iteration', c.get('iteration')); s('-AreaPath', c.get('areaPath')); s('-EpicId', c.get('epicIds'));
     const server = (c.get('serverUrl') || '').trim();
     if (server && server !== 'https://dev.azure.com') a.push('-ServerUrl', server);
@@ -159,7 +174,7 @@ async function openReport(demo, where) {
 }
 function loadReportInto(panel, demo) {
   panel.demo = demo;
-  panel.title = demo ? 'ADO Work Map (demo)' : `ADO Work Map - ${cfg().get('project') || ''}`;
+  panel.title = demo ? 'ADO Work Map (demo)' : `ADO Work Map - ${orgProject().project}`;
   const html = fs.readFileSync(reportPath(demo), 'utf8');
   // The report is self-contained: allow only its own inline code, and send external links to the browser
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">`;
@@ -185,7 +200,7 @@ function ago(iso) {
 async function state() {
   const st = readStatus(), c = cfg();
   return {
-    org: c.get('organization'), project: c.get('project'), missing: settingsMissing(),
+    org: orgProject().org, project: orgProject().project, missing: settingsMissing(),
     token: !!(await ctx.secrets.get(SECRET_KEY)) || !!process.env.ADO_PAT,
     data: st.data, report: st.report, dir: st.dir, historyDays: c.get('historyDays'),
     job: { running: !!job.proc, label: job.label, exit: job.exit, started: job.started && job.started.toISOString(), lastLine: job.lastLine }
