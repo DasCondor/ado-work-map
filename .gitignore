@@ -1,0 +1,11 @@
+# Your filled-in starter holds your PAT - never commit it
+# (run_ado_work_map.example.cmd is the template that is committed)
+run_ado_work_map.cmd
+
+# Generated reports, cache, history and org-specific settings
+ado_report/
+ado_report_demo/
+ado_work_map.config.json
+
+# Packaged copies
+*.zip

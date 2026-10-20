@@ -1,0 +1,80 @@
+{
+  // ADO Work Map tasks. Run them from Terminal > Run Task... (or Ctrl+Shift+B for the default one).
+  // They all go through run_ado_work_map.cmd, so your org, project and PAT live in one place.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ADO Map: Run (pull changes, open report)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Update data (pull changes, don't open browser)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-NoOpen"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Full refresh (re-pull everything)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-Full"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Rebuild report from saved data (no ADO calls)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-Offline"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Pull history from ADO Analytics",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-PullHistory", "-HistoryDays", "${input:historyDays}"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Clear archived data (cache + archived reports)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-ClearArchive"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Clear ALL data (also history and change log)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-ClearArchive", "-IncludeHistory"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "ADO Map: Demo report (sample data)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-Demo"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "historyDays",
+      "type": "promptString",
+      "description": "How many days of history to pull from Azure DevOps Analytics",
+      "default": "180"
+    }
+  ]
+}
