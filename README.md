@@ -13,7 +13,7 @@ in an interactive page you can open in any browser.
 [![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-server-on-premises)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/DasCondor/ado-work-map?label=release)](https://github.com/DasCondor/ado-work-map/releases/latest)
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/DasCondor.ado-work-map?label=VS%20Code%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
 ### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Get the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
