@@ -17,6 +17,7 @@ rem    - Leave ADO_PAT_VALUE empty to use an ADO_PAT environment variable,
 rem      "az login", or be prompted instead.
 rem
 rem  Extra arguments are passed through to the script, e.g.
+rem    run_ado_work_map.cmd -Serve               open the launch pad: setup and data maintenance in your browser
 rem    run_ado_work_map.cmd -Full                re-pull everything (ignore the cache)
 rem    run_ado_work_map.cmd -Offline             rebuild the report from saved data, no ADO calls
 rem    run_ado_work_map.cmd -PullHistory         backfill history.csv from ADO Analytics, then run

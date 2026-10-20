@@ -44,6 +44,10 @@
     ado_work_map.config.json next to this script; later runs need no parameters.
 
 .EXAMPLE
+    run_ado_work_map.cmd -Serve
+    Open the launch pad: a local page for first-time setup and data maintenance
+    (pull, full refresh, rebuild, history, clear) with a live log.
+.EXAMPLE
     .\ado_work_map.ps1 -Setup
     First-time setup: create the report folders and run_ado_work_map.cmd from the example.
 .EXAMPLE
@@ -103,13 +107,16 @@ param(
     [switch]$ClearArchive,
     [switch]$IncludeHistory,
     [switch]$Setup,
+    [switch]$Serve,
+    [int]$Port = 8765,
     [switch]$Demo
 )
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptPath = $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $ScriptPath
 $ApiVersion = '7.1'
 $AdoResource = '499b84ac-1321-427f-aa17-267ca6975798'   # Azure DevOps AAD app id
 $StoryTypes = @('User Story', 'Product Backlog Item', 'Requirement')
@@ -162,7 +169,8 @@ function Get-AuthHeader {
         $tok = & az account get-access-token --resource $AdoResource --query accessToken -o tsv 2>$null
         if ($LASTEXITCODE -eq 0 -and $tok) { return 'Bearer ' + ($tok | Select-Object -First 1).Trim() }
     }
-    $sec = Read-Host -AsSecureString 'Azure DevOps PAT'
+    try { $sec = Read-Host -AsSecureString 'Azure DevOps PAT' }
+    catch { throw 'No credentials: fill in ADO_PAT_VALUE in run_ado_work_map.cmd, set an ADO_PAT environment variable, or run az login.' }
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
     try { $p = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
@@ -2146,6 +2154,319 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
 '@
 
 # --------------------------------------------------------------------------- #
+# Launch pad (-Serve): a small local web page for first-time setup and data
+# maintenance. It only listens on this PC, needs a one-time key from the link it
+# prints, and runs the same script in the background for each button.
+# --------------------------------------------------------------------------- #
+function Get-RunArguments([string[]]$Extra) {
+    # The settings this launch pad was started with, passed on to each background run
+    $a = New-Object 'Collections.Generic.List[string]'
+    $a.AddRange([string[]]@('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath, '-NoOpen', '-ConfigPath', $ConfigPath, '-OutDir', $OutDir))
+    foreach ($k in 'Org', 'Project', 'Team', 'Iteration', 'AreaPath') { $v = Get-Variable $k -ValueOnly; if ($v) { $a.Add("-$k"); $a.Add([string]$v) } }
+    if ($ServerUrl -and $ServerUrl -ne 'https://dev.azure.com') { $a.Add('-ServerUrl'); $a.Add($ServerUrl) }
+    if ($EpicId) { $a.Add('-EpicId'); $a.Add(($EpicId -join ',')) }
+    if ($Types) { $a.Add('-Types'); $a.Add(($Types -join ',')) }
+    foreach ($k in 'MaxPrDetails', 'HistoryDays', 'ArchiveDays', 'CommitDays') {
+        if ($Extra -contains "-$k") { continue }   # the button's own value wins
+        $a.Add("-$k"); $a.Add([string](Get-Variable $k -ValueOnly))
+    }
+    if ($ClosedWithinDays -ge 0) { $a.Add('-ClosedWithinDays'); $a.Add([string]$ClosedWithinDays) }
+    if ($IncludeRemoved) { $a.Add('-IncludeRemoved') }
+    foreach ($x in $Extra) { $a.Add($x) }
+    # One command line, quoting anything with spaces
+    return (($a | ForEach-Object { if ($_ -eq '' -or $_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join ' ')
+}
+
+function Read-SharedText([string]$Path, [int]$MaxLines = 400) {
+    # Read a log another process is still writing to
+    if (-not (Test-Path $Path)) { return '' }
+    $fs = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+    try { $text = (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() }
+    $lines = $text -split "`r?`n"
+    if ($lines.Count -gt $MaxLines) { $lines = $lines[($lines.Count - $MaxLines)..($lines.Count - 1)] }
+    return ($lines -join "`n")
+}
+
+function Start-LaunchPad {
+    $listener = New-Object System.Net.HttpListener
+    $prefix = "http://localhost:$Port/"
+    $listener.Prefixes.Add($prefix)
+    try { $listener.Start() }
+    catch { throw "Couldn't start the launch pad on $prefix ($($_.Exception.Message)). Is it already open? Or pick another port with -Port." }
+    $key = [guid]::NewGuid().ToString('N')
+    # Background runs inherit the token through the environment, never on their command line
+    if ($Pat) { $env:ADO_PAT = $Pat }
+    $logDir = $OutDir   # not cache\: Clear deletes that folder while the run is writing its log
+    $job = @{ proc = $null; action = ''; label = ''; started = $null; exit = $null; log = (Join-Path $logDir 'launchpad.log'); err = (Join-Path $logDir 'launchpad.err.log') }
+    $actions = [ordered]@{
+        setup    = @{ label = 'Set up folders'; args = @('-Setup') }
+        pull     = @{ label = 'Pull changes'; args = @() }
+        full     = @{ label = 'Full refresh'; args = @('-Full') }
+        offline  = @{ label = 'Rebuild report'; args = @('-Offline') }
+        history  = @{ label = 'Pull history'; args = @('-PullHistory') }
+        clear    = @{ label = 'Clear archived data'; args = @('-ClearArchive') }
+        clearall = @{ label = 'Clear all data'; args = @('-ClearArchive', '-IncludeHistory') }
+    }
+    $url = "$($prefix)?k=$key"
+    Write-Host ''
+    Write-Host "ADO Work Map launch pad: $url"
+    Write-Host 'Only this PC can reach it. Keep this window open while you use it; close it (or press Ctrl+C) to stop.'
+    if (-not $NoOpen) { Start-Process $url }
+
+    function Send($ctx, [int]$code, [string]$type, [string]$body) {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $ctx.Response.StatusCode = $code
+        $ctx.Response.ContentType = $type
+        $ctx.Response.Headers.Add('Cache-Control', 'no-store')
+        $ctx.Response.Headers.Add('X-Content-Type-Options', 'nosniff')
+        $ctx.Response.ContentLength64 = $bytes.Length
+        $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+        $ctx.Response.Close()
+    }
+    function SendJson($ctx, $obj) { Send $ctx 200 'application/json; charset=utf-8' (ConvertTo-Json -InputObject $obj -Depth 6 -Compress) }
+
+    function Get-PadStatus {
+        $statusFile = Join-Path $OutDir 'cache\status.json'
+        $report = Join-Path $OutDir 'ado_work_map.html'
+        $todo = @()
+        if (-not $Org) { $todo += 'Organization (ADO_ORG in run_ado_work_map.cmd)' }
+        if (-not $Project) { $todo += 'Project (ADO_PROJECT in run_ado_work_map.cmd)' }
+        if (-not $Pat -and -not $env:ADO_PAT -and -not $env:AZURE_DEVOPS_EXT_PAT -and -not (Get-Command az -ErrorAction SilentlyContinue)) {
+            $todo += 'Personal access token (ADO_PAT_VALUE in run_ado_work_map.cmd, or start the launch pad from run_ado_work_map.cmd)' }
+        $running = $job.proc -and -not $job.proc.HasExited
+        if ($job.proc -and $job.proc.HasExited -and $null -eq $job.exit) { $job.exit = $job.proc.ExitCode }
+        $log = ''
+        if ($job.started) { $log = Read-SharedText $job.log; $e = Read-SharedText $job.err 80; if ($e.Trim()) { $log += "`n" + $e } }
+        @{
+            org = $Org; project = $Project; outDir = $OutDir
+            folders = [bool]((Test-Path $OutDir) -and (Test-Path (Join-Path $OutDir 'cache')) -and (Test-Path (Join-Path $OutDir 'archive')))
+            todo = $todo
+            data = $(if (Test-Path $statusFile) { Get-Content $statusFile -Raw | ConvertFrom-Json } else { $null })
+            report = $(if (Test-Path $report) { $f = Get-Item $report; @{ updated = $f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ'); kb = [int]($f.Length / 1KB) } } else { $null })
+            job = @{ running = [bool]$running; action = $job.action; label = $job.label; exit = $job.exit
+                started = $(if ($job.started) { $job.started.ToString('yyyy-MM-ddTHH:mm:ssZ') } else { $null }); log = $log }
+            actions = @($actions.Keys | ForEach-Object { @{ id = $_; label = $actions[$_].label } })
+        }
+    }
+
+    function Start-PadJob([string]$id, [int]$days) {
+        if ($job.proc -and -not $job.proc.HasExited) { return 'busy' }
+        $a = @($actions[$id].args)
+        if ($id -eq 'history') { $a += '-HistoryDays'; $a += [string][Math]::Max(1, $days) }
+        [void](New-Item -ItemType Directory -Force -Path $logDir)
+        foreach ($f in $job.log, $job.err) { if (Test-Path $f) { Remove-Item $f -Force } }
+        $job.proc = Start-Process powershell.exe -ArgumentList (Get-RunArguments $a) -RedirectStandardOutput $job.log -RedirectStandardError $job.err -NoNewWindow -PassThru
+        $null = $job.proc.Handle   # keeps ExitCode available after the process ends
+        $job.action = $id; $job.label = $actions[$id].label; $job.started = (Get-Date).ToUniversalTime(); $job.exit = $null
+        Write-Host "  $(Get-Date -Format 'HH:mm:ss')  started: $($job.label)"
+        return 'started'
+    }
+
+    try {
+        while ($listener.IsListening) {
+            $pending = $listener.GetContextAsync()
+            while (-not $pending.Wait(500)) { }   # short waits so Ctrl+C still works
+            $ctx = $pending.Result
+            $req = $ctx.Request
+            try {
+                # Only answer requests addressed to this PC by name (blocks DNS-rebinding tricks)
+                if ($req.Url.Host -ne 'localhost') { Send $ctx 403 'text/plain' 'Forbidden'; continue }
+                $cookie = $req.Cookies['adomap']
+                if ($req.QueryString['k'] -eq $key) {
+                    # Swap the one-time key in the link for a cookie, and drop it from the address bar
+                    $ctx.Response.Headers.Add('Set-Cookie', "adomap=$key; Path=/; HttpOnly; SameSite=Strict")
+                    $ctx.Response.Redirect('/'); $ctx.Response.Close(); continue
+                }
+                if (-not $cookie -or $cookie.Value -ne $key) {
+                    Send $ctx 403 'text/html; charset=utf-8' '<p style="font-family:system-ui">Open the launch pad with the link shown in its window.</p>'; continue
+                }
+                if ($req.HttpMethod -eq 'POST' -and $req.Headers['X-AdoMap'] -ne '1') { Send $ctx 403 'text/plain' 'Forbidden'; continue }
+                switch ($req.Url.AbsolutePath) {
+                    '/' { Send $ctx 200 'text/html; charset=utf-8' $LaunchPadTemplate }
+                    '/report' {
+                        $report = Join-Path $OutDir 'ado_work_map.html'
+                        if (Test-Path $report) { Send $ctx 200 'text/html; charset=utf-8' ([IO.File]::ReadAllText($report)) }
+                        else { Send $ctx 404 'text/html; charset=utf-8' '<p style="font-family:system-ui">No report yet - run a pull from the launch pad first.</p>' }
+                    }
+                    '/api/status' { SendJson $ctx (Get-PadStatus) }
+                    '/api/run' {
+                        $body = (New-Object IO.StreamReader($req.InputStream)).ReadToEnd() | ConvertFrom-Json
+                        if (-not $actions.Contains([string]$body.action)) { Send $ctx 400 'text/plain' 'Unknown action'; break }
+                        SendJson $ctx @{ result = (Start-PadJob ([string]$body.action) ([int]$body.days)) }
+                    }
+                    '/api/stop' {
+                        SendJson $ctx @{ result = 'stopping' }
+                        $listener.Stop()
+                    }
+                    default { Send $ctx 404 'text/plain' 'Not found' }
+                }
+            }
+            catch { try { Send $ctx 500 'text/plain' "Error: $($_.Exception.Message)" } catch { } }
+        }
+    }
+    finally {
+        if ($listener.IsListening) { $listener.Stop() }
+        $listener.Close()
+        Write-Host 'Launch pad stopped.'
+    }
+}
+
+$LaunchPadTemplate = @'
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADO Work Map - Launch pad</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--text:#1a202c;--muted:#64748b;--line:#e2e8f0;--hover:#f1f5f9;--accent:#0f62fe;--done:#16a34a;--warn:#b45309;--bad:#dc2626;--code:#0f172a;--codetext:#e2e8f0}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--panel:#171a21;--text:#e5e7eb;--muted:#94a3b8;--line:#2a2f3a;--hover:#1f2430;--accent:#60a5fa;--done:#22c55e;--warn:#f59e0b;--bad:#f87171;--code:#0b0d12;--codetext:#cbd5e1;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Segoe UI",sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0} h2{font-size:15px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:12px}
+main{max-width:1100px;margin:0 auto;padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.wide{grid-column:1/-1}
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
+.btn:hover:not([disabled]){background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.steps li{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start}
+.dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid var(--line);color:var(--muted)}
+.dot.ok{background:var(--done);border-color:var(--done);color:#fff}
+.steps ul{margin:4px 0 0;padding-left:18px;color:var(--warn);font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:18px}
+.acts{display:flex;flex-direction:column;gap:8px}
+.act{display:grid;grid-template-columns:170px 1fr;gap:12px;align-items:center}
+.act .btn{justify-content:center}
+input[type=number]{width:72px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
+.badge{font-size:12px;font-weight:600;padding:2px 9px;border-radius:10px;border:1px solid}
+.b-run{color:var(--accent)} .b-ok{color:var(--done)} .b-bad{color:var(--bad)} .b-idle{color:var(--muted)}
+pre{background:var(--code);color:var(--codetext);border-radius:8px;padding:10px 12px;margin:10px 0 0;height:300px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+.err{color:var(--bad)}
+@media (max-width:820px){main{grid-template-columns:1fr;padding:12px 16px} .act{grid-template-columns:1fr} .stats{grid-template-columns:repeat(2,1fr)} header{padding:12px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>ADO Work Map &middot; Launch pad</h1><div class="sub" id="who">Loading...</div></div>
+  <div style="display:flex;gap:8px"><a class="btn primary" id="open" href="/report" target="_blank" rel="noopener">Open report</a><button class="btn" id="stop" title="Stop the launch pad">Close launch pad</button></div>
+</header>
+<main>
+  <section class="card">
+    <h2>Getting started</h2>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>Your data</h2>
+    <div class="stats" id="stats"></div>
+    <div class="sub" id="dataInfo"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Maintenance</h2>
+    <div class="acts">
+      <div class="act"><button class="btn primary" data-a="pull">Pull changes</button><span class="sub">Get what changed in Azure DevOps since the last pull and rebuild the report. The everyday button.</span></div>
+      <div class="act"><button class="btn" data-a="full">Full refresh</button><span class="sub">Re-read everything from Azure DevOps. Use it if something looks out of date.</span></div>
+      <div class="act"><button class="btn" data-a="offline">Rebuild report</button><span class="sub">Rebuild the report from the saved data. No Azure DevOps calls.</span></div>
+      <div class="act"><button class="btn" data-a="history">Pull history</button><span class="sub">Fill in the progress-over-time chart from Azure DevOps Analytics for the last <input type="number" id="days" min="1" max="3650" value="180"> days.</span></div>
+      <div class="act"><button class="btn danger" data-a="clear">Clear archived data</button><span class="sub">Delete the cache and the daily report copies. The next pull starts from scratch. History and the change log are kept.</span></div>
+      <div class="act"><button class="btn danger" data-a="clearall">Clear all data</button><span class="sub">Also delete history.csv and changelog.csv. This can't be undone.</span></div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">Activity</h2><span id="state" class="badge b-idle">Idle</span><span class="sub" id="elapsed"></span></div>
+    <pre id="log">Nothing has run yet. Pick a button above.</pre>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ago = iso => { if (!iso) return 'never'; const s = (Date.now() - Date.parse(iso)) / 1000;
+  return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; };
+const when = iso => iso ? new Date(iso).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+let S = null, timer = null, lastLog = '', wasRunning = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json', 'X-AdoMap': '1'}, body: JSON.stringify(body)} : {cache: 'no-store'});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function render() {
+  const d = S.data, j = S.job, run = j.running;
+  $('#who').textContent = (S.org && S.project ? `${S.org} / ${S.project}` : 'Settings not filled in yet') + ' - data folder: ' + S.outDir;
+  // Getting started
+  const step = (ok, title, detail, action) => `<li><span class="dot${ok ? ' ok' : ''}">${ok ? '&#10003;' : ''}</span><div><b>${title}</b><div class="sub">${detail}</div></div>${action || '<span></span>'}</li>`;
+  const settingsOk = !S.todo.length;
+  $('#steps').innerHTML =
+    step(settingsOk, 'Fill in your settings', settingsOk ? 'Organization, project and token are set.'
+      : 'Open <b>run_ado_work_map.cmd</b> in Notepad, fill these in, then start the launch pad again:<ul>' + S.todo.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>') +
+    step(S.folders, 'Set up the folders', S.folders ? 'Data folders are ready.' : 'Creates the report, cache and archive folders.',
+      S.folders ? '' : `<button class="btn" data-a="setup"${run ? ' disabled' : ''}>Set up</button>`) +
+    step(!!d, 'First pull', d ? 'Done ' + ago(d.lastRunUtc) + '.' : 'Pulls everything once. Later pulls only fetch changes.',
+      d ? '' : `<button class="btn primary" data-a="pull"${run || !settingsOk ? ' disabled' : ''}>Pull everything</button>`) +
+    step(!!S.report, 'Open the report', S.report ? 'Updated ' + ago(S.report.updated) + '.' : 'Appears after the first pull.',
+      S.report ? '<a class="btn" href="/report" target="_blank" rel="noopener">Open</a>' : '');
+  // Data
+  const stat = (k, v) => `<div class="stat"><span class="sub">${k}</span><b>${v}</b></div>`;
+  $('#stats').innerHTML = d ? stat('Last pull', ago(d.lastRunUtc)) + stat('Work items', (d.items || 0).toLocaleString()) + stat('Sprints', d.sprints || 0) +
+      stat('Pull requests', (d.prs || 0).toLocaleString()) + stat('Changes last pull', (d.changes || 0).toLocaleString()) + stat('API calls last pull', d.apiCalls || 0)
+    : '<div class="sub" style="grid-column:1/-1">No data yet. Run the first pull.</div>';
+  $('#dataInfo').innerHTML = d ? `Last pull ${when(d.lastRunUtc)} (${esc(d.mode)})` + (S.report ? ` &middot; report ${S.report.kb.toLocaleString()} KB, updated ${when(S.report.updated)}` : '') : '';
+  $('#open').style.visibility = S.report ? 'visible' : 'hidden';
+  // Buttons
+  $$('button[data-a]').forEach(b => { b.disabled = run || (b.dataset.a !== 'setup' && !settingsOk && ['pull', 'full', 'history'].includes(b.dataset.a)); });
+  // Activity
+  const st = $('#state');
+  if (!j.started) { st.className = 'badge b-idle'; st.textContent = 'Idle'; }
+  else if (run) { st.className = 'badge b-run'; st.textContent = j.label + ' - running...'; }
+  else if (j.exit === 0) { st.className = 'badge b-ok'; st.textContent = j.label + ' - finished'; }
+  else { st.className = 'badge b-bad'; st.textContent = j.label + ' - failed' + (j.exit != null ? ` (exit ${j.exit})` : ''); }
+  $('#elapsed').textContent = j.started ? (run ? 'started ' : 'ran at ') + when(j.started) : '';
+  if (j.started && j.log !== lastLog) {
+    const pre = $('#log'), atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    pre.textContent = j.log || '(no output yet)'; lastLog = j.log;
+    if (atEnd || run || wasRunning) pre.scrollTop = pre.scrollHeight;
+  }
+  wasRunning = run;
+}
+
+async function refresh() {
+  clearTimeout(timer);
+  try { S = await api('/api/status'); render(); timer = setTimeout(refresh, S.job.running ? 1200 : 5000); }
+  catch (e) { $('#state').className = 'badge b-bad'; $('#state').textContent = 'Launch pad not reachable'; $('#who').textContent = 'The launch pad window was closed. Start it again to continue.'; }
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-a]'); if (!b || b.disabled) return;
+  const a = b.dataset.a;
+  if (a === 'clear' && !confirm('Delete the cache and archived reports? The next pull will start from scratch.')) return;
+  if (a === 'clearall' && !confirm('Delete ALL saved data, including history.csv and changelog.csv? This cannot be undone.')) return;
+  try { const r = await api('/api/run', {action: a, days: +$('#days').value || 180}); if (r.result === 'busy') alert('Something is already running - wait for it to finish.'); }
+  catch (err) { alert('Could not start: ' + err.message); }
+  lastLog = ''; refresh();
+});
+$('#stop').onclick = async () => {
+  if (S && S.job.running && !confirm('A run is still in progress. Close the launch pad anyway? The run keeps going in the background.')) return;
+  try { await api('/api/stop', {}); } catch (e) {}
+  document.body.innerHTML = '<p style="font-family:system-ui;padding:24px">The launch pad is closed. Start it again from VS Code or <b>run_ado_work_map.cmd -Serve</b>.</p>';
+};
+refresh();
+</script>
+</body>
+</html>
+'@
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 $CacheDir = Join-Path $OutDir 'cache'
@@ -2200,6 +2521,8 @@ if ($Setup) {
     Write-Host 'Try it without Azure DevOps first: run_ado_work_map.cmd -Demo'
     return
 }
+
+if ($Serve) { Start-LaunchPad; return }
 
 if ($ClearArchive) {
     $targets = @($CacheDir, $ArchiveDir)
@@ -2336,6 +2659,17 @@ if ($ArchiveDays -gt 0) {
     [void](New-Item -ItemType Directory -Force -Path $ArchiveDir)
     Copy-Item $htmlPath (Join-Path $ArchiveDir ('ado_work_map_{0}.html' -f (Get-Date -Format 'yyyy-MM-dd'))) -Force
     Get-ChildItem $ArchiveDir -Filter 'ado_work_map_*.html' | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$ArchiveDays) } | Remove-Item -Force
+}
+
+# Small summary of this run for the launch pad
+if (-not $Demo) {
+    [void](New-Item -ItemType Directory -Force -Path $CacheDir)
+    Write-JsonFile (Join-Path $CacheDir 'status.json') @{
+        lastRunUtc = $runUtc; finishedUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        mode = $(if ($Offline) { 'rebuilt from saved data' } elseif ($Full) { 'full refresh' } else { 'pulled changes' })
+        items = @($model.items).Count; sprints = @($model.sprints).Count; prs = $prs.Count
+        changes = $changeLog.Count; apiCalls = $script:ApiCalls
+    }
 }
 
 $inSprint = @($model.items | Where-Object { $_.inSprint }).Count

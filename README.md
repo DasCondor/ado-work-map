@@ -35,6 +35,7 @@ in an interactive page you can open in any browser.
 
 - [What's in the report](#whats-in-the-report)
 - [Quick start](#quick-start)
+- [Launch pad](#launch-pad)
 - [How it works](#how-it-works)
 - [Commands](#commands)
 - [VS Code tasks](#vs-code-tasks)
@@ -121,6 +122,20 @@ run_ado_work_map.cmd -Demo
 > [!TIP]
 > Rather not keep a token in a file? Leave `ADO_PAT_VALUE` empty. The script then uses an `ADO_PAT` environment variable, an `az login` session, or asks you for the token.
 
+## Launch pad
+
+Prefer buttons to commands? The launch pad is a small page for getting started and looking after your data. Start it with the **ADO Map: Launch pad** task in VS Code, or:
+
+```bat
+run_ado_work_map.cmd -Serve
+```
+
+It opens in your browser and walks you through setup (settings, folders, first pull, open the report), then gives you one-click **Pull changes**, **Full refresh**, **Rebuild report**, **Pull history**, **Clear archived data** and **Clear all data**, with a live log of each run and when your data was last pulled.
+
+<img src="docs/images/launch-pad.png" alt="Launch pad: getting-started checklist, data summary, maintenance buttons and a live log" width="900">
+
+It's served by the script itself, only to this PC (`localhost`), and only to the link it prints, which carries a one-time key. Your settings and token stay in `run_ado_work_map.cmd`. Close it with **Close launch pad** or by stopping the task.
+
 ## How it works
 
 ```mermaid
@@ -157,6 +172,7 @@ Extra arguments go straight to the script, so these work after `run_ado_work_map
 | `-PullHistory [-HistoryDays 180]` | Backfill `history.csv` from Azure DevOps Analytics, then run |
 | `-ClearArchive` | Delete the cache and archived reports |
 | `-ClearArchive -IncludeHistory` | ...and `history.csv` and `changelog.csv` too |
+| `-Serve [-Port 8765]` | Open the [launch pad](#launch-pad) in your browser |
 | `-Setup` | First-time setup: folders, the starter file, and a check of what's left to fill in |
 | `-NoOpen` | Don't open the browser at the end |
 | `-Demo` | Sample data, no connection |
@@ -200,6 +216,7 @@ Open the folder in VS Code and choose **Terminal > Run Task...** (`Ctrl+Shift+B`
 | Task | |
 |---|---|
 | ADO Map: Set up folders and starter | First time: creates `ado_report\` (with `cache\` and `archive\`), creates `run_ado_work_map.cmd` from the example, checks it's git-ignored, lists the settings still to fill in and opens the file |
+| ADO Map: Launch pad | Opens the [launch pad](#launch-pad) for setup and data maintenance |
 | ADO Map: Run | Pull changes, open the report |
 | ADO Map: Update data | Pull changes, don't open the browser |
 | ADO Map: Full refresh | Re-pull everything |

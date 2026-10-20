@@ -13,6 +13,16 @@
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
+      // Opens the launch pad in your browser; stop it with its Close button or the trash icon here
+      "label": "ADO Map: Launch pad (setup and data maintenance)",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "${workspaceFolder}\\run_ado_work_map.cmd", "-Serve"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       "label": "ADO Map: Run (pull changes, open report)",
       "type": "process",
       "command": "cmd.exe",
