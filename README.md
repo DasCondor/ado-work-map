@@ -13,9 +13,11 @@ in an interactive page you can open in any browser.
 [![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-server-on-premises)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
+### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/)
+
 <img src="docs/images/delivery-map.png" alt="Delivery map: epics on the left, the selected epic's features and stories with progress bars on the right" width="900">
 
-<sub>All screenshots use the built-in demo data (<code>-Demo</code>), not a real project.</sub>
+<sub>The live demo and all screenshots use the built-in demo data (<code>-Demo</code>), not a real project.</sub>
 
 </div>
 
@@ -100,6 +102,7 @@ The connections: work items, their parent/child, related and dependency links, a
 
 1. Download this repo (**Code > Download ZIP**) and unzip it anywhere.
 2. Copy `run_ado_work_map.example.cmd` to **`run_ado_work_map.cmd`**. That name is git-ignored, so your token never ends up in a commit.
+   In VS Code, the **ADO Map: Set up folders and starter** task does this for you (or run `ado_work_map.ps1 -Setup`).
 3. Open it in Notepad and fill in:
    ```bat
    set "ADO_ORG=your-org"
@@ -154,6 +157,7 @@ Extra arguments go straight to the script, so these work after `run_ado_work_map
 | `-PullHistory [-HistoryDays 180]` | Backfill `history.csv` from Azure DevOps Analytics, then run |
 | `-ClearArchive` | Delete the cache and archived reports |
 | `-ClearArchive -IncludeHistory` | ...and `history.csv` and `changelog.csv` too |
+| `-Setup` | First-time setup: folders, the starter file, and a check of what's left to fill in |
 | `-NoOpen` | Don't open the browser at the end |
 | `-Demo` | Sample data, no connection |
 
@@ -195,6 +199,7 @@ Open the folder in VS Code and choose **Terminal > Run Task...** (`Ctrl+Shift+B`
 
 | Task | |
 |---|---|
+| ADO Map: Set up folders and starter | First time: creates `ado_report\` (with `cache\` and `archive\`), creates `run_ado_work_map.cmd` from the example, checks it's git-ignored, lists the settings still to fill in and opens the file |
 | ADO Map: Run | Pull changes, open the report |
 | ADO Map: Update data | Pull changes, don't open the browser |
 | ADO Map: Full refresh | Re-pull everything |

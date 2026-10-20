@@ -44,6 +44,9 @@
     ado_work_map.config.json next to this script; later runs need no parameters.
 
 .EXAMPLE
+    .\ado_work_map.ps1 -Setup
+    First-time setup: create the report folders and run_ado_work_map.cmd from the example.
+.EXAMPLE
     .\ado_work_map.ps1 -Org contoso -Project Phoenix -Team "Phoenix Team" -SaveConfig
 .EXAMPLE
     .\ado_work_map.ps1
@@ -99,6 +102,7 @@ param(
     [int]$CommitDays = 365,
     [switch]$ClearArchive,
     [switch]$IncludeHistory,
+    [switch]$Setup,
     [switch]$Demo
 )
 
@@ -1236,6 +1240,9 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 #trend svg,#velo svg{width:100%;height:auto;display:block}
 #trend text,#velo text,#hm text{fill:var(--muted);font-size:11px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.toast[hidden]{display:none}
+.demo-pill{font-size:11px;font-weight:600;padding:1px 8px;border-radius:9px;background:var(--accent);color:#fff;vertical-align:2px}
 /* spider web */
 .web{display:grid;grid-template-columns:1fr 280px;gap:12px}
 .gwrap{position:relative}
@@ -1490,6 +1497,16 @@ function makeTree(el, o) {
 $('#title').textContent = D.project + ' - Work Map';
 $('#meta').innerHTML = `${esc(D.org)} / <a href="${esc(D.projectUrl)}" target="_blank" rel="noopener">${esc(D.project)}</a> &middot; ${D.items.length.toLocaleString()} work items &middot; ${SPR.length} sprints &middot; data pulled ${esc(fmtWhen(D.runUtc) || D.generated)}` +
   (D.sprint ? ` &middot; current sprint: <b>${esc(D.sprint.name)}</b>` : '');
+// Demo data: links can't open real work items, so say so instead of going to a dead page
+if (D.demo) {
+  $('#title').innerHTML = esc(D.project) + ' - Work Map <span class="demo-pill">DEMO DATA</span>';
+  $('#meta').insertAdjacentHTML('beforeend', ' &middot; <a href="https://github.com/DasCondor/ado-work-map" target="_blank" rel="noopener">Get the script on GitHub</a>');
+  const note = msg => { let t = $('#demoNote'); if (!t) { t = document.createElement('div'); t.id = 'demoNote'; t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false; clearTimeout(note.h); note.h = setTimeout(() => { t.hidden = true; }, 3500); };
+  const msg = 'Demo data - in your own report this opens the item in Azure DevOps.';
+  document.addEventListener('click', e => { const a = e.target.closest('a[href^="https://dev.azure.com/demo"]'); if (a) { e.preventDefault(); note(msg); } }, true);
+  window.open = () => { note(msg); return null; };
+}
 // Links can open a tab directly: ado_work_map.html#/sprints (or #/maps:dark)
 let activeTab = location.hash.replace(/^#\/?/, '').split(':')[0] || store.get('tab', 'map');
 function showTab(t) {
@@ -2141,6 +2158,49 @@ $MetaPath = Join-Path $CacheDir 'meta.json'
 $CommitCachePath = Join-Path $CacheDir 'commits.json'
 $script:ApiCalls = 0
 
+if ($Setup) {
+    # First-time setup: folders, the starter file, and a check of what still needs filling in
+    Write-Host "Setting up ADO Work Map in $ScriptDir"
+    foreach ($dir in @($OutDir, $CacheDir, $ArchiveDir)) {
+        if (Test-Path $dir) { Write-Host "  ok       $dir" }
+        else { [void](New-Item -ItemType Directory -Force -Path $dir); Write-Host "  created  $dir" }
+    }
+    $starter = Join-Path $ScriptDir 'run_ado_work_map.cmd'
+    $example = Join-Path $ScriptDir 'run_ado_work_map.example.cmd'
+    if (Test-Path $starter) { Write-Host "  ok       $starter (kept as it is)" }
+    elseif (Test-Path $example) { Copy-Item $example $starter; Write-Host "  created  $starter (from run_ado_work_map.example.cmd)" }
+    else { Write-Warning "run_ado_work_map.example.cmd is missing - download it again from the repo." }
+
+    $todo = @()
+    if (Test-Path $starter) {
+        $vals = @{}
+        foreach ($line in (Get-Content $starter)) { if ($line -match '^set "ADO_(\w+)=(.*)"\s*$') { $vals[$Matches[1]] = $Matches[2] } }
+        if (-not $vals.ORG -or $vals.ORG -eq 'your-org') { $todo += 'ADO_ORG (your organization, the part after dev.azure.com/)' }
+        if (-not $vals.PROJECT -or $vals.PROJECT -eq 'Your Project') { $todo += 'ADO_PROJECT' }
+        if (-not $vals.PAT_VALUE -and -not $env:ADO_PAT) { $todo += 'ADO_PAT_VALUE (or set an ADO_PAT environment variable, or use az login)' }
+    }
+    # The starter holds the PAT: make sure git would never pick it up
+    if (Test-Path (Join-Path $ScriptDir '.git')) {
+        Push-Location $ScriptDir
+        try {
+            & git check-ignore -q run_ado_work_map.cmd 2>$null
+            if ($LASTEXITCODE -eq 0) { Write-Host '  ok       run_ado_work_map.cmd is git-ignored' }
+            else { Write-Warning 'run_ado_work_map.cmd is NOT git-ignored - add it to .gitignore before you put a PAT in it.' }
+        }
+        finally { Pop-Location }
+    }
+    Write-Host "  ok       Windows PowerShell $($PSVersionTable.PSVersion)"
+    Write-Host ''
+    if ($todo.Count) {
+        Write-Host 'Next: open run_ado_work_map.cmd and fill in:'
+        $todo | ForEach-Object { Write-Host "  - $_" }
+        if ($env:TERM_PROGRAM -eq 'vscode' -and (Get-Command code -ErrorAction SilentlyContinue)) { & code $starter }
+    }
+    else { Write-Host 'Settings look complete. Run the "ADO Map: Run" task, or double-click run_ado_work_map.cmd.' }
+    Write-Host 'Try it without Azure DevOps first: run_ado_work_map.cmd -Demo'
+    return
+}
+
 if ($ClearArchive) {
     $targets = @($CacheDir, $ArchiveDir)
     if ($IncludeHistory) { $targets += $HistoryPath, $ChangeLogPath }
@@ -2256,6 +2316,7 @@ else {
 $model.runUtc = $runUtc
 $model.prevRunUtc = $prevRunUtc
 $model.commits = @{ days = $CommitDays; rows = $commitRows }
+$model.demo = [bool]$Demo
 
 $json = ConvertTo-Json -InputObject $model -Depth 12 -Compress
 $utf8 = New-Object Text.UTF8Encoding $false

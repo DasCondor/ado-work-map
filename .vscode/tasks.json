@@ -4,6 +4,15 @@
   "version": "2.0.0",
   "tasks": [
     {
+      // Runs the script directly, so it works before run_ado_work_map.cmd exists
+      "label": "ADO Map: Set up folders and starter (first time)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\ado_work_map.ps1", "-Setup"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       "label": "ADO Map: Run (pull changes, open report)",
       "type": "process",
       "command": "cmd.exe",
