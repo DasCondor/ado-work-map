@@ -73,7 +73,7 @@
 
 .NOTES
     Outputs (in -OutDir, default .\ado_report next to this script):
-      ado_work_map.html   interactive report (spider web loads vis-network from unpkg.com)
+      ado_work_map.html   interactive report - one self-contained file, works offline
       ado_work_map.json   normalized data
       ado_work_items.csv  flat list of work items (opens in Excel)
       history.csv         one row per work item type per day
@@ -1149,7 +1149,6 @@ $HtmlTemplate = @'
   if (t !== 'auto') document.documentElement.dataset.theme = t;
 })();
 </script>
-<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--panel:#fff;--text:#1a202c;--muted:#64748b;--line:#e2e8f0;--hover:#f1f5f9;--sel:#e8f0fe;
   --done:#16a34a;--active:#2563eb;--new:#a3aec0;--removed:#cbd5e1;--accent:#0f62fe}
@@ -1258,6 +1257,9 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 #g-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 #g-busy{position:absolute;top:10px;left:10px;display:flex;gap:8px;align-items:center;background:var(--hover);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px}
 #g-overlay[hidden],#g-busy[hidden]{display:none}
+.gtip{position:absolute;z-index:4;pointer-events:none;max-width:340px;white-space:pre-line;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.gtip[hidden]{display:none}
+#graph{position:relative;overflow:hidden}
 #side{display:flex;flex-direction:column;gap:12px}
 #side label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
 #side .sw{width:11px;height:11px;border-radius:2px;background:var(--c)}
@@ -1990,6 +1992,218 @@ $('#theme').onchange = e => {
   if (window.graphApi) { graphApi.reset(); if (activeTab === 'web') initGraph(); }
 };
 
+// ---------- Graph renderer ----------
+// A small canvas graph built into the report, so the spider web works offline
+// with no outside libraries: shapes, labels, dashed / arrowed links, hover
+// tooltips, drag, pan, wheel zoom, and a force layout run in small chunks.
+function MiniGraph(host, NS, ES, fg) {
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'width:100%;height:100%;display:block;cursor:grab;touch-action:none;border-radius:8px';
+  host.innerHTML = ''; host.appendChild(cv);
+  const tip = document.createElement('div'); tip.className = 'gtip'; tip.hidden = true; host.appendChild(tip);
+  const ctx = cv.getContext('2d');
+  const P = new Map();                       // node id -> {x, y}
+  let ids = [], eids = [], sel = null, raf = 0, running = false, userMoved = false, dpr = 1, W = 0, H = 0, drag = null, tipTimer = 0;
+  let animTok = 0;   // bumping it cancels a running focus animation
+  const view = {x: 0, y: 0, k: 1}, handlers = {}, doneQueue = [];
+  const size = id => NS.get(id).size || 10;
+  const dbBox = id => { const s = NS.get(id); ctx.font = '600 14px system-ui,Segoe UI,sans-serif'; return {w: ctx.measureText(s.label).width + 22, h: 38}; };
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1; W = host.clientWidth; H = host.clientHeight;
+    cv.width = Math.max(1, W * dpr); cv.height = Math.max(1, H * dpr);
+    if (!userMoved) fit();   // the first real size can arrive after a small layout has already finished
+    paint();
+  }
+  const ro = new ResizeObserver(resize); ro.observe(host);
+
+  function shapePath(id, p) {
+    const s = NS.get(id), r = size(id), x = p.x, y = p.y;
+    ctx.beginPath();
+    switch (s.shape) {
+      case 'square': ctx.rect(x - r, y - r, 2 * r, 2 * r); break;
+      case 'triangle': ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r, y + r * .75); ctx.lineTo(x - r, y + r * .75); ctx.closePath(); break;
+      case 'triangleDown': ctx.moveTo(x, y + r * 1.15); ctx.lineTo(x + r, y - r * .75); ctx.lineTo(x - r, y - r * .75); ctx.closePath(); break;
+      case 'diamond': ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.2, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r * 1.2, y); ctx.closePath(); break;
+      case 'hexagon': for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i; ctx[i ? 'lineTo' : 'moveTo'](x + r * Math.cos(a), y + r * Math.sin(a)); } ctx.closePath(); break;
+      case 'database': { const b = dbBox(id), w = b.w, h = b.h, e = 6;
+        ctx.moveTo(x - w / 2, y - h / 2 + e); ctx.ellipse(x, y - h / 2 + e, w / 2, e, 0, Math.PI, 0);
+        ctx.lineTo(x + w / 2, y + h / 2 - e); ctx.ellipse(x, y + h / 2 - e, w / 2, e, 0, 0, Math.PI); ctx.closePath(); break; }
+      default: ctx.arc(x, y, r, 0, Math.PI * 2);
+    }
+  }
+  function paint() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(dpr * view.k, 0, 0, dpr * view.k, dpr * view.x, dpr * view.y);
+    const panning = drag && drag.kind === 'pan' && eids.length > 2500;
+    if (!panning) for (const e of eids) {
+      const s = ES.get(e), a = P.get(s.from), b = P.get(s.to); if (!a || !b) continue;
+      const hi = sel && (s.from === sel || s.to === sel);
+      ctx.globalAlpha = hi ? .95 : .5; ctx.strokeStyle = s.color; ctx.lineWidth = (s.width || 1) * (hi ? 1.8 : 1);
+      ctx.setLineDash(s.dashes ? (Array.isArray(s.dashes) ? s.dashes : [5, 5]) : []);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      if (s.arrow) {
+        const ang = Math.atan2(b.y - a.y, b.x - a.x), r = size(s.to) + 3, tx = b.x - Math.cos(ang) * r, ty = b.y - Math.sin(ang) * r;
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - 10 * Math.cos(ang - .4), ty - 10 * Math.sin(ang - .4)); ctx.lineTo(tx - 10 * Math.cos(ang + .4), ty - 10 * Math.sin(ang + .4));
+        ctx.closePath(); ctx.fillStyle = s.color; ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+    for (const id of ids) {
+      const p = P.get(id), s = NS.get(id); if (!p) continue;
+      shapePath(id, p); ctx.fillStyle = s.bg; ctx.fill();
+      ctx.lineWidth = id === sel ? 3 : s.bw; ctx.strokeStyle = id === sel ? fg : s.border; ctx.stroke();
+    }
+    for (const id of ids) {
+      const p = P.get(id), s = NS.get(id); if (!p || !s.label || s.font.size * view.k < 6) continue;
+      ctx.font = `${s.font.bold ? '600 ' : ''}${s.font.size}px system-ui,Segoe UI,sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = s.font.color;
+      if (s.shape === 'database') { ctx.textBaseline = 'middle'; ctx.fillText(s.label, p.x, p.y + 2); }
+      else { ctx.textBaseline = 'top'; ctx.fillText(s.label, p.x, p.y + size(id) * 1.25 + 3); }
+    }
+  }
+  const schedulePaint = () => { if (!running) requestAnimationFrame(paint); };
+
+  function setVisible(nodeIds, edgeIds) {
+    ids = [...nodeIds]; eids = edgeIds; userMoved = false; animTok++;
+    const nb = new Map(), add = (a, b) => { let l = nb.get(a); if (!l) nb.set(a, l = []); l.push(b); };
+    eids.forEach(e => { const s = ES.get(e); add(s.from, s.to); add(s.to, s.from); });
+    const R = 45 * Math.sqrt(ids.length + 1);
+    ids.forEach(id => {   // new nodes start next to a neighbour that's already placed, else somewhere in a disc
+      if (P.has(id)) return;
+      const n = (nb.get(id) || []).find(x => P.has(x)), a = Math.random() * 6.2832, r = n ? 25 + Math.random() * 35 : R * Math.sqrt(Math.random());
+      const o = n ? P.get(n) : {x: 0, y: 0}; P.set(id, {x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r});
+    });
+    if (!ids.includes(sel)) sel = null;
+    fit(); paint();
+  }
+  function fit() {
+    if (!ids.length || !W) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    ids.forEach(id => { const p = P.get(id); x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); });
+    view.k = Math.min(1.6, Math.max(.04, Math.min(W / (x1 - x0 + 120), H / (y1 - y0 + 120))));
+    view.x = W / 2 - view.k * (x0 + x1) / 2; view.y = H / 2 - view.k * (y0 + y1) / 2;
+  }
+  function layout(iters, onProgress) {
+    stop();
+    const n = ids.length; if (!n) return;
+    const idx = new Map(ids.map((id, i) => [id, i]));
+    const X = new Float64Array(n), Y = new Float64Array(n), VX = new Float64Array(n), VY = new Float64Array(n), M = new Float64Array(n);
+    ids.forEach((id, i) => { const p = P.get(id); X[i] = p.x; Y[i] = p.y; M[i] = NS.get(id).mass || 1; });
+    const E = []; eids.forEach(e => { const s = ES.get(e), a = idx.get(s.from), b = idx.get(s.to); if (a != null && b != null) E.push(a, b); });
+    const rest = 95, kSpring = .035, kRep = 3600, cell = 170, grav = .005, damp = .8;
+    let it = 0; running = true;
+    const step = () => {
+      // Work in ~14 ms slices, so the page stays responsive (and it keeps going where animation frames are throttled)
+      const t0 = performance.now();
+      for (; it < iters && performance.now() - t0 < 14; it++) {
+        const cool = 1 - .85 * it / iters, grid = new Map(), FX = new Float64Array(n), FY = new Float64Array(n);
+        for (let i = 0; i < n; i++) { const k = Math.floor(X[i] / cell) * 100003 + Math.floor(Y[i] / cell); let c = grid.get(k); if (!c) grid.set(k, c = []); c.push(i); }
+        for (let i = 0; i < n; i++) {   // repulsion between nearby nodes only (grid), so big graphs stay fast
+          const cx = Math.floor(X[i] / cell), cy = Math.floor(Y[i] / cell);
+          for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
+            const c = grid.get(gx * 100003 + gy); if (!c) continue;
+            for (const j of c) {
+              if (j <= i) continue;
+              let dx = X[i] - X[j], dy = Y[i] - Y[j], d2 = dx * dx + dy * dy;
+              if (d2 > cell * cell) continue;
+              if (d2 < .01) { dx = Math.random() - .5; dy = Math.random() - .5; d2 = .25; }
+              const d = Math.sqrt(d2), fr = kRep * M[i] * M[j] / d2;
+              FX[i] += dx / d * fr; FY[i] += dy / d * fr; FX[j] -= dx / d * fr; FY[j] -= dy / d * fr;
+            }
+          }
+        }
+        for (let e = 0; e < E.length; e += 2) {
+          const a = E[e], b = E[e + 1], dx = X[b] - X[a], dy = Y[b] - Y[a], d = Math.sqrt(dx * dx + dy * dy) || .1, fs = kSpring * (d - rest);
+          FX[a] += dx / d * fs; FY[a] += dy / d * fs; FX[b] -= dx / d * fs; FY[b] -= dy / d * fs;
+        }
+        const maxV = 35 * cool;
+        for (let i = 0; i < n; i++) {
+          if (drag && drag.kind === 'node' && drag.id === ids[i]) { const p = P.get(ids[i]); X[i] = p.x; Y[i] = p.y; VX[i] = VY[i] = 0; continue; }
+          VX[i] = (VX[i] + (FX[i] - X[i] * grav) / M[i]) * damp; VY[i] = (VY[i] + (FY[i] - Y[i] * grav) / M[i]) * damp;
+          const v = Math.hypot(VX[i], VY[i]); if (v > maxV) { VX[i] *= maxV / v; VY[i] *= maxV / v; }
+          X[i] += VX[i]; Y[i] += VY[i];
+        }
+      }
+      ids.forEach((id, i) => { const p = P.get(id); p.x = X[i]; p.y = Y[i]; });
+      if (!userMoved) fit();
+      paint();
+      if (onProgress) onProgress(it, iters);
+      if (it < iters && running) raf = setTimeout(step, 0);
+      else { running = false; const q = doneQueue.splice(0); q.forEach(f => f()); }
+    };
+    raf = setTimeout(step, 0);
+  }
+  function stop() { clearTimeout(raf); running = false; }
+
+  // ---- interaction ----
+  const toWorld = (sx, sy) => ({x: (sx - view.x) / view.k, y: (sy - view.y) / view.k});
+  function hit(sx, sy) {
+    const w = toWorld(sx, sy);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i], p = P.get(id), s = NS.get(id);
+      if (s.shape === 'database') { const b = dbBox(id); if (Math.abs(w.x - p.x) <= b.w / 2 && Math.abs(w.y - p.y) <= b.h / 2) return id; }
+      else { const r = size(id) * 1.25 + 3 / view.k; if ((w.x - p.x) ** 2 + (w.y - p.y) ** 2 <= r * r) return id; }
+    }
+    return null;
+  }
+  const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener('pointerdown', e => {
+    const [sx, sy] = local(e), id = hit(sx, sy);
+    drag = {kind: id ? 'node' : 'pan', id, sx, sy, moved: false, vx: view.x, vy: view.y}; animTok++;
+    cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; tip.hidden = true;
+  });
+  cv.addEventListener('pointermove', e => {
+    const [sx, sy] = local(e);
+    if (drag) {
+      if (Math.abs(sx - drag.sx) + Math.abs(sy - drag.sy) > 3) drag.moved = true;
+      if (!drag.moved) return;
+      userMoved = true;
+      if (drag.kind === 'pan') { view.x = drag.vx + sx - drag.sx; view.y = drag.vy + sy - drag.sy; }
+      else { const w = toWorld(sx, sy), p = P.get(drag.id); p.x = w.x; p.y = w.y; }
+      schedulePaint(); return;
+    }
+    const id = hit(sx, sy);
+    cv.style.cursor = id ? 'pointer' : 'grab';
+    clearTimeout(tipTimer);
+    if (!id || !NS.get(id).title) { tip.hidden = true; return; }
+    tipTimer = setTimeout(() => {
+      tip.textContent = NS.get(id).title; tip.hidden = false;
+      tip.style.left = Math.min(sx + 14, W - tip.offsetWidth - 8) + 'px'; tip.style.top = Math.min(sy + 14, H - tip.offsetHeight - 8) + 'px';
+    }, 150);
+  });
+  cv.addEventListener('pointerup', e => {
+    if (!drag) return;
+    const d = drag; drag = null; cv.style.cursor = 'grab';
+    if (!d.moved) { sel = d.id; paint(); if (handlers.click) handlers.click(d.id); }
+    else schedulePaint();
+  });
+  cv.addEventListener('pointerleave', () => { clearTimeout(tipTimer); tip.hidden = true; });
+  cv.addEventListener('dblclick', e => { const [sx, sy] = local(e), id = hit(sx, sy); if (id && handlers.doubleClick) handlers.doubleClick(id); });
+  cv.addEventListener('wheel', e => {
+    e.preventDefault(); userMoved = true; animTok++;
+    const [sx, sy] = local(e), w = toWorld(sx, sy), k = Math.min(6, Math.max(.03, view.k * Math.exp(-e.deltaY * .0015)));
+    view.k = k; view.x = sx - w.x * k; view.y = sy - w.y * k; schedulePaint();
+  }, {passive: false});
+
+  return {
+    setVisible, layout, stop, fit: () => { fit(); paint(); }, paint,
+    get running() { return running; },
+    on(ev, fn) { handlers[ev] = fn; },
+    whenDone(fn) { if (running) doneQueue.push(fn); else fn(); },
+    select(id) { sel = id; paint(); },
+    screenPos(id) { const p = P.get(id); return p ? [view.x + p.x * view.k, view.y + p.y * view.k] : null; },
+    focus(id, k) {
+      const p = P.get(id); if (!p) return; userMoved = true;
+      const k0 = view.k, x0 = view.x, y0 = view.y, k1 = k || 1, x1 = W / 2 - p.x * k1, y1 = H / 2 - p.y * k1, t0 = performance.now(), tok = ++animTok;
+      const anim = t => { if (tok !== animTok) return; const f = Math.min(1, (t - t0) / 350), s = f * (2 - f);
+        view.k = k0 + (k1 - k0) * s; view.x = x0 + (x1 - x0) * s; view.y = y0 + (y1 - y0) * s; paint(); if (f < 1) requestAnimationFrame(anim); };
+      requestAnimationFrame(anim);
+    },
+    destroy() { stop(); ro.disconnect(); host.innerHTML = ''; }
+  };
+}
+
 // ---------- Spider web ----------
 // Big projects reach tens of thousands of nodes, more than a browser can lay out.
 // The graph only draws one scope at a time (overview, sprint, one item's tree) and
@@ -1998,7 +2212,6 @@ const NODE_LIMIT = 2000;
 let net;
 function initGraph() {
   if (net) return;
-  if (!window.vis) { $('#graph').innerHTML = '<p class="sub" style="padding:16px">Could not load vis-network from unpkg.com (offline or blocked?). The spider web needs internet access.</p>'; return; }
   const css = getComputedStyle(document.documentElement);
   const fg = css.getPropertyValue('--text').trim(), done = css.getPropertyValue('--done').trim(),
         muted = css.getPropertyValue('--muted').trim();
@@ -2026,20 +2239,18 @@ function initGraph() {
   G.edges.forEach(e => { if (e.kind !== 'related' && e.kind !== 'depends') return; const a = +e.from.slice(1), b = +e.to.slice(1);
     (adj.get(a) || adj.set(a, []).get(a)).push(b); (adj.get(b) || adj.set(b, []).get(b)).push(a); });
 
-  const nodes = new vis.DataSet(G.nodes.map(n => {
+  const NS = new Map(G.nodes.map(n => {
     const sh = SHAPE[n.kind] || ['dot', 8], isDone = n.bucket === 'done' || n.status === 'completed';
-    return {id: n.id, label: n.label, title: n.title, shape: sh[0], size: sh[1] || undefined,
-      color: {background: C[n.kind], border: isDone ? done : C[n.kind], highlight: {background: C[n.kind], border: fg}},
-      borderWidth: isDone ? 3 : 1,
+    return [n.id, {label: n.label, title: n.title, shape: sh[0], size: sh[1] || 10, bg: C[n.kind] || '#888',
+      border: isDone ? done : (C[n.kind] || '#888'), bw: isDone ? 3 : 1,
       font: n.kind === 'Repo' ? {color: '#fff', size: 14, bold: true} : {color: fg, size: n.kind === 'Commit' ? 9 : 11},
-      mass: n.kind === 'Repo' ? 3 : 1};
+      mass: n.kind === 'Repo' ? 3 : 1}];
   }));
-  const EDGE = {child: {color: muted, width: 1.2}, related: {color: muted, dashes: true}, depends: {color: '#dc2626', arrows: 'to'},
+  const EDGE = {child: {color: muted, width: 1.2}, related: {color: muted, dashes: true}, depends: {color: '#dc2626', arrow: true},
                 artifact: {color: '#0d9488', width: .8}, 'in-repo': {color: '#475569', width: .8}, 'pr-branch': {color: '#2563eb', dashes: [2, 3]},
                 'wi-repo': {color: '#475569', dashes: [6, 4], width: .8}, rollup: {color: '#64748b'}};
-  const edges = new vis.DataSet(allEdges.map(e => Object.assign({id: e.id, from: e.from, to: e.to}, EDGE[e.kind],
-    e.kind === 'rollup' ? {width: 1 + Math.min(6, Math.log2(e.count)), title: `${e.count} linked work item${e.count > 1 ? 's' : ''}`} : {},
-    {color: {color: (EDGE[e.kind] || {}).color, opacity: .55}})));
+  const ES = new Map(allEdges.map(e => [e.id, Object.assign({from: e.from, to: e.to}, EDGE[e.kind] || {color: muted},
+    e.kind === 'rollup' ? {width: 1 + Math.min(6, Math.log2(e.count))} : {})]));
   const edgeMeta = new Map(allEdges.map(e => [e.id, e]));
 
   let scope = SPR.length ? 'sprint' : 'overview', focusId = null, force = false, visible = new Set();
@@ -2072,27 +2283,21 @@ function initGraph() {
       if (((scope === 'overview' || scope === 'all') && !hd) || (scope !== 'overview' && n.wis.some(w => wiOn.has('w' + w)))) visible.add(n.id); });
     if (scope === 'overview' && on.has('Repo')) rollEdges.forEach(e => { if (wiOn.has(e.from)) visible.add(e.to); });
   }
-  const nv = new vis.DataView(nodes, {filter: n => visible.has(n.id)});
-  const ev = new vis.DataView(edges, {filter: e => { const m = edgeMeta.get(e.id);
+  const edgeOk = m => {
     if (!visible.has(m.from) || !visible.has(m.to)) return false;
     if (m.kind === 'rollup') return scope === 'overview';
     if (m.kind === 'wi-repo') return scope !== 'overview' && !m.via.some(a => visible.has(a));
-    return true; }});
-  net = new vis.Network($('#graph'), {nodes: nv, edges: ev}, {
-    layout: {improvedLayout: false},
-    physics: {enabled: false, solver: 'forceAtlas2Based', forceAtlas2Based: {gravitationalConstant: -45, springLength: 70, avoidOverlap: .3}},
-    interaction: {hover: true, tooltipDelay: 150, hideEdgesOnDrag: true, hideEdgesOnZoom: true},
-    edges: {smooth: false}, nodes: {borderWidthSelected: 3}});
+    return true; };
+  net = MiniGraph($('#graph'), NS, ES, fg);
 
   const busy = $('#g-busy'), overlay = $('#g-overlay');
-  const stopLayout = () => { net.stopSimulation(); net.setOptions({physics: {enabled: false}}); busy.hidden = true; };
-  net.on('stabilizationProgress', p => { busy.hidden = false;
-    busy.innerHTML = `Laying out ${visible.size} nodes&hellip; ${Math.round(100 * p.iterations / p.total)}% <button class="btn" style="padding:1px 8px">Stop</button>`;
-    busy.querySelector('button').onclick = stopLayout; });
-  net.on('stabilizationIterationsDone', () => { net.setOptions({physics: {enabled: false}}); busy.hidden = true; });
-  const layout = () => { const n = visible.size, it = n > 1000 ? 150 : n > 300 ? 250 : 400;
-    net.setOptions({physics: {enabled: true, stabilization: {enabled: true, iterations: it, updateInterval: n > 500 ? 5 : 20}}});
-    net.stabilize(it); };
+  const layout = () => {
+    const n = visible.size, it = n > 1000 ? 150 : n > 300 ? 250 : 400;
+    busy.innerHTML = `Laying out ${n.toLocaleString()} nodes&hellip; <span>0%</span> <button class="btn" style="padding:1px 8px">Stop</button>`;
+    busy.querySelector('button').onclick = () => { net.stop(); busy.hidden = true; };
+    busy.hidden = false;
+    net.layout(it, (i, t) => { busy.querySelector('span').textContent = Math.round(100 * i / t) + '%'; if (i >= t) busy.hidden = true; });
+  };
 
   function draw() {
     compute();
@@ -2111,8 +2316,8 @@ function initGraph() {
       overlay.hidden = false;
       $('#g-force').onclick = () => { force = true; draw(); };
     }
-    nv.refresh(); ev.refresh();
-    if (visible.size) layout();
+    net.setVisible(visible, allEdges.filter(edgeOk).map(e => e.id));
+    if (visible.size) layout(); else busy.hidden = true;
   }
   function setScope(s) { scope = s; force = false; $('#g-scope').value = s; $('#g-sprintsel').hidden = s !== 'sprint'; draw(); }
   $('#g-sprintsel').onchange = e => { gSprint = +e.target.value; force = false; draw(); };
@@ -2120,7 +2325,7 @@ function initGraph() {
     focusId = id;
     $('#g-scope option[value=focus]').textContent = `Focus: #${id} ${(byId.get(id) || {}).title || ''}`.slice(0, 60);
     setScope('focus');
-    net.once('stabilizationIterationsDone', () => { if (visible.has('w' + id)) { net.selectNodes(['w' + id]); net.focus('w' + id, {scale: 1, animation: true}); } });
+    net.whenDone(() => { if (visible.has('w' + id)) { net.select('w' + id); net.focus('w' + id, 1); } });
   }
   const showDetail = n => {
     $('#detail').innerHTML = `<b>${esc(n.label)}</b><div class="sub">${esc(n.kind)}</div><pre>${esc(n.title)}</pre>` +
@@ -2133,13 +2338,13 @@ function initGraph() {
   $('#kinds').onchange = e => { const k = e.target.dataset.k; e.target.checked ? on.add(k) : on.delete(k); draw(); };
   $('#g-hidedone').onchange = draw;
   $('#relayout').onclick = () => { if (visible.size) layout(); };
-  net.on('click', p => { const n = nodeById.get(p.nodes[0]); if (n) showDetail(n); });
-  net.on('doubleClick', p => { const n = nodeById.get(p.nodes[0]); if (n && n.wi) focusOn(+n.id.slice(1)); });
+  net.on('click', id => { const n = nodeById.get(id); if (n) showDetail(n); });
+  net.on('doubleClick', id => { const n = nodeById.get(id); if (n && n.wi) focusOn(+n.id.slice(1)); });
   $('#gq').onkeydown = e => { if (e.key !== 'Enter') return; const q = e.target.value.trim().toLowerCase().replace(/^#/, ''); if (!q) return;
     const hit = nodeById.get('w' + q) || G.nodes.find(n => n.label.toLowerCase().includes(q));
     if (!hit) { $('#detail').innerHTML = '<span class="sub">No match.</span>'; return; }
     showDetail(hit);
-    if (visible.has(hit.id)) { net.selectNodes([hit.id]); net.focus(hit.id, {scale: 1.2, animation: true}); }
+    if (visible.has(hit.id)) { net.select(hit.id); net.focus(hit.id, 1.2); }
     else if (hit.wi) focusOn(+hit.id.slice(1));
     else if (hit.wis && hit.wis.length) focusOn(hit.wis[0]); };
   window.graphApi = {redraw: () => { force = false; draw(); }, focus: id => focusOn(id),
@@ -2656,9 +2861,13 @@ $model.items | ForEach-Object {
 
 # One archived copy of the report per day
 if ($ArchiveDays -gt 0) {
-    [void](New-Item -ItemType Directory -Force -Path $ArchiveDir)
-    Copy-Item $htmlPath (Join-Path $ArchiveDir ('ado_work_map_{0}.html' -f (Get-Date -Format 'yyyy-MM-dd'))) -Force
-    Get-ChildItem $ArchiveDir -Filter 'ado_work_map_*.html' | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$ArchiveDays) } | Remove-Item -Force
+    # The archive is a convenience: if it can't be written (e.g. a very long path), warn and carry on
+    try {
+        [void](New-Item -ItemType Directory -Force -Path $ArchiveDir)
+        Copy-Item $htmlPath (Join-Path $ArchiveDir ('ado_work_map_{0}.html' -f (Get-Date -Format 'yyyy-MM-dd'))) -Force
+        Get-ChildItem $ArchiveDir -Filter 'ado_work_map_*.html' | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$ArchiveDays) } | Remove-Item -Force
+    }
+    catch { Write-Warning "Couldn't archive today's report: $($_.Exception.Message)" }
 }
 
 # Small summary of this run for the launch pad

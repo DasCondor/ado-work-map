@@ -9,3 +9,8 @@ ado_work_map.config.json
 
 # Packaged copies
 *.zip
+
+# Extension build output (the script and license are copied in at build time)
+vscode-extension/resources/
+vscode-extension/LICENSE.txt
+*.vsix

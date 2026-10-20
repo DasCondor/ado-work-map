@@ -1,0 +1,77 @@
+{
+  "name": "ado-work-map",
+  "displayName": "ADO Work Map",
+  "description": "Self-contained Azure DevOps work map: delivery map, sprints, changes, maps and a spider web of your work and repos, in one offline HTML report.",
+  "version": "1.0.0",
+  "publisher": "DasCondor",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/DasCondor/ado-work-map#readme",
+  "repository": { "type": "git", "url": "https://github.com/DasCondor/ado-work-map.git" },
+  "bugs": { "url": "https://github.com/DasCondor/ado-work-map/issues" },
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Visualization", "Other"],
+  "keywords": ["azure devops", "ado", "sprint", "work items", "report", "velocity", "burnup"],
+  "extensionKind": ["ui"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": true },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "adoWorkMap", "title": "ADO Work Map", "icon": "media/activity.svg" }]
+    },
+    "views": {
+      "adoWorkMap": [{ "type": "webview", "id": "adoWorkMap.home", "name": "Launch pad" }]
+    },
+    "commands": [
+      { "command": "adoWorkMap.pull", "title": "Pull Changes", "category": "ADO Work Map", "icon": "$(sync)" },
+      { "command": "adoWorkMap.fullRefresh", "title": "Full Refresh", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.rebuild", "title": "Rebuild Report (no Azure DevOps calls)", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.pullHistory", "title": "Pull History from Analytics...", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.clearArchive", "title": "Clear Archived Data", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.clearAll", "title": "Clear All Data", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.openReport", "title": "Open Report", "category": "ADO Work Map", "icon": "$(graph)" },
+      { "command": "adoWorkMap.openReportInBrowser", "title": "Open Report in Browser", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.demo", "title": "Open Demo Report", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.setToken", "title": "Set Personal Access Token", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.clearToken", "title": "Remove Personal Access Token", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.openSettings", "title": "Open Settings", "category": "ADO Work Map", "icon": "$(gear)" },
+      { "command": "adoWorkMap.showLog", "title": "Show Log", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.openDataFolder", "title": "Open Data Folder", "category": "ADO Work Map" },
+      { "command": "adoWorkMap.cancel", "title": "Cancel Running Task", "category": "ADO Work Map" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "adoWorkMap.pull", "when": "view == adoWorkMap.home", "group": "navigation@1" },
+        { "command": "adoWorkMap.openReport", "when": "view == adoWorkMap.home", "group": "navigation@2" },
+        { "command": "adoWorkMap.openSettings", "when": "view == adoWorkMap.home", "group": "navigation@3" }
+      ]
+    },
+    "configuration": {
+      "title": "ADO Work Map",
+      "properties": {
+        "adoWorkMap.organization": { "type": "string", "default": "", "order": 1, "markdownDescription": "Your Azure DevOps organization: the part after `https://dev.azure.com/`. For Azure DevOps Server, the collection name." },
+        "adoWorkMap.project": { "type": "string", "default": "", "order": 2, "description": "The Azure DevOps project." },
+        "adoWorkMap.team": { "type": "string", "default": "", "order": 3, "markdownDescription": "Team whose sprints are shown. Empty = `<project> Team`." },
+        "adoWorkMap.iteration": { "type": "string", "default": "", "order": 4, "markdownDescription": "Treat this iteration path as the current sprint, e.g. `Project\\Sprint 14`. Empty = the team's current sprint." },
+        "adoWorkMap.epicIds": { "type": "string", "default": "", "order": 5, "markdownDescription": "Only these epics and everything under them, comma separated, e.g. `1234,5678`." },
+        "adoWorkMap.areaPath": { "type": "string", "default": "", "order": 6, "description": "Only this area path and its children." },
+        "adoWorkMap.workItemTypes": { "type": "array", "items": { "type": "string" }, "default": ["Epic", "Feature", "User Story", "Product Backlog Item", "Requirement", "Bug", "Task"], "order": 7, "description": "Work item types to include." },
+        "adoWorkMap.closedWithinDays": { "type": "integer", "default": -1, "order": 8, "description": "Skip items closed more than this many days ago (-1 = keep all). Open items are always kept." },
+        "adoWorkMap.includeRemoved": { "type": "boolean", "default": false, "order": 9, "description": "Include items in the Removed state." },
+        "adoWorkMap.historyDays": { "type": "integer", "default": 180, "order": 10, "description": "Days of history to pull from Analytics with Pull History." },
+        "adoWorkMap.commitDays": { "type": "integer", "default": 365, "order": 11, "description": "Days of commit history for the commit heatmap (0 = off). Only commit dates and authors are read, never code." },
+        "adoWorkMap.archiveDays": { "type": "integer", "default": 30, "order": 12, "description": "Days to keep the daily report copies (0 = don't archive)." },
+        "adoWorkMap.maxPrDetails": { "type": "integer", "default": 500, "order": 13, "description": "Cap on one-by-one lookups for linked pull requests the PR list doesn't cover." },
+        "adoWorkMap.serverUrl": { "type": "string", "default": "https://dev.azure.com", "order": 14, "markdownDescription": "Change only for Azure DevOps Server (on-premises), e.g. `https://tfs.contoso.com/tfs`." },
+        "adoWorkMap.dataFolder": { "type": "string", "default": "", "order": 15, "markdownDescription": "Where the report, cache and history are kept. Empty = the extension's own storage folder (outside your repos)." },
+        "adoWorkMap.pullOnStartup": { "type": "boolean", "default": false, "order": 16, "description": "Pull changes when VS Code starts." },
+        "adoWorkMap.autoPullMinutes": { "type": "integer", "default": 0, "minimum": 0, "order": 17, "description": "Pull changes every N minutes while VS Code is open (0 = off)." },
+        "adoWorkMap.openReportIn": { "type": "string", "enum": ["vscode", "browser"], "enumDescriptions": ["Open the report in a VS Code tab", "Open the report in your default browser"], "default": "vscode", "order": 18, "description": "Where Open Report shows the report." }
+      }
+    }
+  }
+}

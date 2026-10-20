@@ -26,6 +26,7 @@ in an interactive page you can open in any browser.
 ## Why
 
 - **Nothing to install.** Runs on the Windows PowerShell 5.1 that ships with Windows 10 and 11. No modules, no admin rights.
+- **One file, fully offline.** The report is a single HTML file with everything inside it, the graph drawing included. No CDNs, no outside scripts.
 - **Built for big projects.** Tested with 5,400 work items and 5,000 pull requests. Views open on a sensible slice and render lazily, so the page stays quick.
 - **Only pulls what changed.** The first run pulls everything; every run after that asks Azure DevOps for just the changes since last time.
 - **Light on the API.** Pull request info comes from the PR list endpoint, 1,000 per call, instead of one call per PR.
@@ -35,6 +36,7 @@ in an interactive page you can open in any browser.
 
 - [What's in the report](#whats-in-the-report)
 - [Quick start](#quick-start)
+- [VS Code extension](#vs-code-extension)
 - [Launch pad](#launch-pad)
 - [How it works](#how-it-works)
 - [Commands](#commands)
@@ -97,7 +99,7 @@ The connections: work items, their parent/child, related and dependency links, a
 
 - Windows 10 or 11 (Windows PowerShell 5.1, already installed)
 - An Azure DevOps personal access token with **read** access to: Work Items, Code, Project and Team, Build, and Analytics (Analytics is only needed for `-PullHistory`)
-- A browser. The spider web loads [vis-network](https://visjs.github.io/vis-network/) from unpkg.com; every other tab works offline.
+- A browser. The report is one self-contained HTML file with no outside libraries, so it works offline and can be emailed or shared as a single file.
 
 ### Steps
 
@@ -121,6 +123,18 @@ run_ado_work_map.cmd -Demo
 
 > [!TIP]
 > Rather not keep a token in a file? Leave `ADO_PAT_VALUE` empty. The script then uses an `ADO_PAT` environment variable, an `az login` session, or asks you for the token.
+
+## VS Code extension
+
+Everything above, inside VS Code: the **ADO Work Map** extension bundles the script and gives it a launch pad in the sidebar, Command Palette commands, VS Code settings, a status bar item showing your last pull, and the report in an editor tab. Your token is kept in VS Code's secret storage (Windows Credential Manager) instead of a file.
+
+**Install:** download `ado-work-map-<version>.vsix` from the [latest release](https://github.com/DasCondor/ado-work-map/releases/latest), then in VS Code open the Extensions view, click **...** > **Install from VSIX...** and pick the file. Or from a terminal:
+
+```bat
+code --install-extension ado-work-map-1.0.0.vsix
+```
+
+Then click the **ADO Work Map** icon in the Activity Bar and follow the checklist. To build the `.vsix` yourself (no Node.js needed): `powershell -ExecutionPolicy Bypass -File vscode-extension\build.ps1`.
 
 ## Launch pad
 
@@ -234,7 +248,7 @@ Everything is written to `ado_report\` next to the script.
 
 | File | |
 |---|---|
-| `ado_work_map.html` | The report. Open a tab directly with a link like `ado_work_map.html#/sprints` (add `:dark` or `:light` for a theme). |
+| `ado_work_map.html` | The report: one self-contained file that works offline. Open a tab directly with a link like `ado_work_map.html#/sprints` (add `:dark` or `:light` for a theme). |
 | `ado_work_items.csv` | Flat list of work items for Excel |
 | `ado_work_map.json` | All the report's data |
 | `history.csv` | Daily counts per work item type, for the progress chart |
@@ -269,12 +283,6 @@ The script reads sprints from the team `<project> Team`. If your team has a diff
 
 </details>
 
-<details>
-<summary><b>The spider web says it can't load</b></summary>
-
-It needs internet access to unpkg.com for the graph library. Everything else works offline.
-
-</details>
 
 <details>
 <summary><b>The history pull fails</b></summary>
