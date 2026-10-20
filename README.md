@@ -1,81 +1,273 @@
+<div align="center">
+
 # ADO Work Map
 
-A single PowerShell script that pulls Epics, Features, User Stories, Bugs and Tasks from Azure DevOps and builds an interactive HTML report of what's done, what's left, every sprint, what changed, and how the work connects to your repos.
+**One PowerShell script. One HTML report. Your whole Azure DevOps project at a glance.**
 
-- **Windows PowerShell 5.1 only.** No modules to install; everything it uses ships with Windows 11.
-- **Incremental.** The first run pulls everything; later runs only pull work items that changed since the last run.
-- **Light on the API.** Pull request info (title, status, branches, author; never code) comes from the project's PR list, 1,000 per call. Completed PRs are cached for good.
+Epics, features, stories and tasks, every sprint, what changed, and how the work connects to your code,
+in an interactive page you can open in any browser.
 
-## The report
+[![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](#requirements)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#requirements)
+[![No dependencies](https://img.shields.io/badge/modules-none-success)](#requirements)
+[![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-server-on-premises)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-| Tab | What it shows |
-|---|---|
-| **Delivery map** | Searchable epic list next to the selected epic's Feature > Story > Task tree with done / in progress / not started roll-ups. *Collapse to* Epic, Feature, Story or Task. Progress-over-time chart from `history.csv`. |
-| **Sprints** | Every sprint on a timeline. Per sprint: KPIs, work by person (click to filter), and the sprint's work as a collapsible tree. Also a velocity chart and a sprint map (epics/features x sprints). |
-| **Changes** | What changed in a time frame (latest pull, 7/14/30/90 days, custom): created, completed, updated, plus a change log of state changes, sprint moves, reassignments, retitles and scope changes recorded on each run. |
-| **Maps** | Treemap (size = work, colour = % done, click to zoom) and a repo matrix (epics or features x repos). Both scale to thousands of items. |
-| **Spider web** | Graph of work items, links, PRs, commits, branches, builds and repos. Opens on the current sprint; also overview, focus on one item, or everything. |
+<img src="docs/images/delivery-map.png" alt="Delivery map: epics on the left, the selected epic's features and stories with progress bars on the right" width="900">
 
-A filter bar (search, epic, person, area, tag) applies to every tab. Light / dark theme picker in the header.
+<sub>All screenshots use the built-in demo data (<code>-Demo</code>), not a real project.</sub>
 
-## Setup
+</div>
 
-1. Copy `run_ado_work_map.example.cmd` to `run_ado_work_map.cmd` (that name is git-ignored).
-2. Open it in Notepad and fill in `ADO_ORG`, `ADO_PROJECT` and `ADO_PAT_VALUE`, plus any optional settings.
-   PAT scopes (all **Read**): Work Items, Code, Project and Team, Build, and Analytics (for history).
-3. Double-click `run_ado_work_map.cmd`. The report opens from `ado_report\ado_work_map.html`.
+---
 
-Try it without Azure DevOps first:
+## Why
+
+- **Nothing to install.** Runs on the Windows PowerShell 5.1 that ships with Windows 10 and 11. No modules, no admin rights.
+- **Built for big projects.** Tested with 5,400 work items and 5,000 pull requests. Views open on a sensible slice and render lazily, so the page stays quick.
+- **Only pulls what changed.** The first run pulls everything; every run after that asks Azure DevOps for just the changes since last time.
+- **Light on the API.** Pull request info comes from the PR list endpoint, 1,000 per call, instead of one call per PR.
+- **Read-only, no code.** It reads work items, PR metadata and commit dates. It never downloads file contents or diffs, and never writes anything to Azure DevOps.
+
+## Contents
+
+- [What's in the report](#whats-in-the-report)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Commands](#commands)
+- [VS Code tasks](#vs-code-tasks)
+- [Output files](#output-files)
+- [Security and privacy](#security-and-privacy)
+- [FAQ](#faq)
+
+## What's in the report
+
+A filter bar (search, epic, person, area, tag) sits above every tab and applies to all of them. Pick light, dark or auto in the header. Every `#1234` is a link straight to the work item in Azure DevOps.
+
+### Delivery map
+
+What's accomplished and what's left, from epic down to task. Pick an epic on the left to see its features on the right; use **Collapse to** Epic / Feature / Story / Task to choose how deep to look. Filter to *Accomplished*, *Yet to do* or *Current sprint*. A progress-over-time chart builds up from each run (or backfill it from Analytics with `-PullHistory`).
+
+### Sprints
+
+Every sprint on a timeline. Open one to see its numbers, **work by person** (click a name to filter the whole report to them) and its work as a collapsible Epic > Feature > Story > Task tree with remaining hours rolled up.
+
+<img src="docs/images/sprints.png" alt="Sprint detail: sprint timeline, KPIs, work by person and a collapsible tree of the sprint's work" width="900">
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/velocity.png" alt="Velocity chart: done vs planned points per sprint with a rolling average"><br><b>Velocity</b> &mdash; done vs planned per sprint, with the average of the last six.</td>
+<td width="50%"><img src="docs/images/sprint-map.png" alt="Sprint map: epics and features down the side, sprints across the top"><br><b>Sprint map</b> &mdash; epics and features against sprints, so you can see where work landed and what's coming.</td>
+</tr>
+</table>
+
+### Changes
+
+What changed in any time frame: the latest pull, the last 7 / 14 / 30 / 90 days, or custom dates. Created, completed and updated counts come straight from the work item dates. A change log recorded on every run adds the detail: state changes, sprint moves, reassignments, retitles, point changes, and items added to or dropped from scope.
+
+<img src="docs/images/changes.png" alt="Changes tab: counts for the last 30 days and the change log" width="900">
+
+### Maps
+
+Other ways to see the same data when a graph gets too busy.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/treemap.png" alt="Treemap: epic tiles containing feature tiles, coloured by percent done"><br><b>Treemap</b> &mdash; tile size is how much work, colour is % done. Click to zoom from epics to features to stories.</td>
+<td width="50%"><img src="docs/images/repo-matrix.png" alt="Repo matrix: epics against repositories with counts of linked work items"><br><b>Repo matrix</b> &mdash; which epics (or features) touch which repos, through PRs, commits and branches.</td>
+</tr>
+</table>
+
+<img src="docs/images/commit-heatmap.png" alt="Commit heatmap: a year of commits per day, with top repos and top authors" width="900">
+
+**Commit heatmap** &mdash; commits per day for the last year, filterable by repo and author, with the busiest repos and authors. Only commit dates and author names are read.
+
+### Spider web
+
+The connections: work items, their parent/child, related and dependency links, and the PRs, branches, commits, builds and repos attached to them. It opens on the current sprint; switch to an overview, focus on one item's tree (double-click it), or pick any sprint. Large views ask before drawing, so the page never locks up.
+
+<img src="docs/images/spider-web.png" alt="Spider web: a graph of work items, pull requests, branches, commits and repositories" width="900">
+
+## Quick start
+
+### Requirements
+
+- Windows 10 or 11 (Windows PowerShell 5.1, already installed)
+- An Azure DevOps personal access token with **read** access to: Work Items, Code, Project and Team, Build, and Analytics (Analytics is only needed for `-PullHistory`)
+- A browser. The spider web loads [vis-network](https://visjs.github.io/vis-network/) from unpkg.com; every other tab works offline.
+
+### Steps
+
+1. Download this repo (**Code > Download ZIP**) and unzip it anywhere.
+2. Copy `run_ado_work_map.example.cmd` to **`run_ado_work_map.cmd`**. That name is git-ignored, so your token never ends up in a commit.
+3. Open it in Notepad and fill in:
+   ```bat
+   set "ADO_ORG=your-org"
+   set "ADO_PROJECT=Your Project"
+   set "ADO_PAT_VALUE=<your token>"
+   ```
+   Optional settings (team, epics, area path, history days and more) are documented right there in the file.
+4. Double-click **`run_ado_work_map.cmd`**. The report opens from `ado_report\ado_work_map.html`.
+
+Want a look first? No Azure DevOps needed:
 
 ```bat
 run_ado_work_map.cmd -Demo
 ```
 
-Prefer not to keep a PAT in a file? Leave `ADO_PAT_VALUE` empty and the script uses an `ADO_PAT` environment variable, `az login`, or asks for it.
+> [!TIP]
+> Rather not keep a token in a file? Leave `ADO_PAT_VALUE` empty. The script then uses an `ADO_PAT` environment variable, an `az login` session, or asks you for the token.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Run the script] --> B{Saved data<br/>in cache?}
+    B -- no --> C[Pull everything<br/>once]
+    B -- yes --> D[Ask ADO what changed<br/>since the last run]
+    C --> E[(cache)]
+    D --> F[Fetch only new and<br/>changed items]
+    F --> E
+    E --> G[Compare with the last pull<br/>= change log]
+    G --> H[Build the report]
+    H --> I[ado_work_map.html]
+```
+
+| Data | First run | Every run after |
+|---|---|---|
+| Work items | One id query, then details 200 per call | One "changed since" query, details only for what changed |
+| Pull requests | Project PR list, 1,000 per call (metadata only) | Active PRs plus those closed since the last run |
+| Commits (heatmap) | Dates and authors for the last `-CommitDays` days | Only the last two days are re-read |
+| Sprints, repos, state names | One call each | One call each |
+
+With 5,400 work items and 5,000 PRs on a local test server, a first run took about 40 calls and a typical later run about 13, plus a few calls per repository for the commit heatmap.
 
 ## Commands
 
-Extra arguments go straight to the script, so these work with the starter or with `ado_work_map.ps1` directly:
+Extra arguments go straight to the script, so these work after `run_ado_work_map.cmd` or with `ado_work_map.ps1` directly.
 
-| Command | Does |
+| Command | What it does |
 |---|---|
 | *(none)* | Pull changes since the last run and rebuild the report |
 | `-Full` | Re-pull everything, ignoring the cache |
 | `-Offline` | Rebuild the report from saved data, no Azure DevOps calls |
 | `-PullHistory [-HistoryDays 180]` | Backfill `history.csv` from Azure DevOps Analytics, then run |
 | `-ClearArchive` | Delete the cache and archived reports |
-| `-ClearArchive -IncludeHistory` | ...and `history.csv` and `changelog.csv` |
-| `-NoOpen` | Don't open the browser |
-| `-Demo` | Sample data |
+| `-ClearArchive -IncludeHistory` | ...and `history.csv` and `changelog.csv` too |
+| `-NoOpen` | Don't open the browser at the end |
+| `-Demo` | Sample data, no connection |
 
-Scope options: `-Team`, `-Iteration`, `-EpicId 1234,5678`, `-AreaPath`, `-Types`, `-ClosedWithinDays`, `-IncludeRemoved`. Azure DevOps Server (on-prem): `-ServerUrl https://tfs.contoso.com/tfs` with the collection name as `-Org`. Run `Get-Help .\ado_work_map.ps1 -Full` for everything.
+<details>
+<summary><b>All settings</b></summary>
 
-### VS Code
+| Parameter | Default | Meaning |
+|---|---|---|
+| `-Org`, `-Project` | | Your organization (the part after `dev.azure.com/`) and project |
+| `-Team` | `<project> Team` | Team whose sprints are shown |
+| `-Iteration` | team's current | Treat this iteration path as the current sprint |
+| `-EpicId 1234,5678` | | Only these epics and everything under them |
+| `-AreaPath` | | Only this area path and its children |
+| `-Types` | Epic, Feature, User Story, Product Backlog Item, Requirement, Bug, Task | Work item types to include |
+| `-ClosedWithinDays` | all | Skip items closed more than N days ago |
+| `-IncludeRemoved` | off | Include items in the Removed state |
+| `-CommitDays` | 365 | Days of commit history for the heatmap, `0` to turn it off |
+| `-MaxPrDetails` | 500 | Cap on one-by-one lookups for linked PRs the list doesn't cover |
+| `-ArchiveDays` | 30 | Days to keep the daily report copies, `0` to turn off |
+| `-OutDir` | `.\ado_report` | Where everything is written |
+| `-ServerUrl` | `https://dev.azure.com` | For Azure DevOps Server, see below |
+| `-SaveConfig` | | Save the settings to `ado_work_map.config.json` (never the token) |
 
-Open the folder and use **Terminal > Run Task...**: Run, Update data, Full refresh, Rebuild from saved data, Pull history, Clear archived data, Clear ALL data, Demo. The tasks call `run_ado_work_map.cmd`, so your settings live in one place.
+Run `Get-Help .\ado_work_map.ps1 -Full` for the full help.
 
-## Output
+</details>
 
-Everything goes to `ado_report\` next to the script:
+### Azure DevOps Server (on-premises)
+
+```bat
+run_ado_work_map.cmd -ServerUrl https://tfs.contoso.com/tfs -Org DefaultCollection
+```
+
+Use the collection name as the organization.
+
+## VS Code tasks
+
+Open the folder in VS Code and choose **Terminal > Run Task...** (`Ctrl+Shift+B` runs the default):
+
+| Task | |
+|---|---|
+| ADO Map: Run | Pull changes, open the report |
+| ADO Map: Update data | Pull changes, don't open the browser |
+| ADO Map: Full refresh | Re-pull everything |
+| ADO Map: Rebuild report from saved data | No Azure DevOps calls |
+| ADO Map: Pull history from ADO Analytics | Asks how many days |
+| ADO Map: Clear archived data | Cache and archived reports |
+| ADO Map: Clear ALL data | Also history and the change log |
+| ADO Map: Demo report | Sample data |
+
+The tasks call `run_ado_work_map.cmd`, so your settings live in one place.
+
+## Output files
+
+Everything is written to `ado_report\` next to the script.
 
 | File | |
 |---|---|
-| `ado_work_map.html` | The report (the spider web loads vis-network from unpkg.com; the other tabs work offline) |
-| `ado_work_map.json` | Normalized data |
-| `ado_work_items.csv` | Flat list for Excel |
-| `history.csv` | Daily counts per work item type |
+| `ado_work_map.html` | The report. Open a tab directly with a link like `ado_work_map.html#/sprints` (add `:dark` or `:light` for a theme). |
+| `ado_work_items.csv` | Flat list of work items for Excel |
+| `ado_work_map.json` | All the report's data |
+| `history.csv` | Daily counts per work item type, for the progress chart |
 | `changelog.csv` | Changes detected between runs |
-| `cache\` | Work items, PR info and settings from the last pull |
-| `archive\` | One copy of the report per day, kept 30 days (`-ArchiveDays`) |
+| `cache\` | Work items, PR info, commit counts and settings from the last pull |
+| `archive\` | One copy of the report per day |
 
-## License
+## Security and privacy
 
-MIT - see [LICENSE](LICENSE).
+- **Read-only.** The script only reads from Azure DevOps; it never creates, edits or deletes anything there.
+- **No code.** It reads work items, PR metadata (title, status, branches, author) and commit dates and authors. It never downloads file contents or diffs, and it doesn't save commit messages or PR descriptions.
+- **Your token stays local.** The starter passes it through the environment, not the command line, so it doesn't show in the process list. It's never written to the config file, the cache or the report.
+- **The output is your data.** The report and cache contain real work item titles and names. Keep `ado_report\` wherever your organization says that kind of data belongs.
 
-## Running it blocked?
+## FAQ
 
-If Windows blocks the script, the starter already uses `-ExecutionPolicy Bypass`. To run the `.ps1` directly:
+<details>
+<summary><b>Windows says the script is blocked</b></summary>
+
+The starter already runs it with `-ExecutionPolicy Bypass`. To run the `.ps1` yourself:
 
 ```bat
 powershell -ExecutionPolicy Bypass -File .\ado_work_map.ps1
 ```
+
+</details>
+
+<details>
+<summary><b>The Sprints tab is empty</b></summary>
+
+The script reads sprints from the team `<project> Team`. If your team has a different name, set `ADO_TEAM` (or `-Team`). The team needs sprints selected in its settings.
+
+</details>
+
+<details>
+<summary><b>The spider web says it can't load</b></summary>
+
+It needs internet access to unpkg.com for the graph library. Everything else works offline.
+
+</details>
+
+<details>
+<summary><b>The history pull fails</b></summary>
+
+`-PullHistory` uses Azure DevOps Analytics. It must be enabled for the project, and the token needs the **Analytics (Read)** scope.
+
+</details>
+
+<details>
+<summary><b>I changed the epics / area / types and the first run took longer</b></summary>
+
+The cache belongs to one scope. When the scope changes, the next run pulls everything once, then goes back to pulling only changes.
+
+</details>
+
+## License
+
+[MIT](LICENSE)

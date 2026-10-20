@@ -11,6 +11,10 @@
                        chart from history.csv
       * Sprints      - every sprint on a timeline, velocity per sprint, a sprint
                        map (features x sprints) and the detail of any sprint
+      * Changes      - what was created, completed, updated or moved in any time
+                       frame, plus a change log recorded between runs
+      * Maps         - treemap of epics/features by % done, a repo matrix, and a
+                       commit heatmap (commits per day by repo and author)
       * Spider web   - graph of work items and their links (parent/child, related,
                        dependencies) plus the PRs, commits, branches, builds and
                        repos attached to them
@@ -23,6 +27,8 @@
       * pull requests: metadata only (title, status, branches, author - never
         code, diffs or commits), read from the project's PR list 1000 per call.
         Completed PRs never change, so later runs only re-check active ones.
+      * commits (heatmap): dates and author names only, for -CommitDays days;
+        later runs re-read just the last two days
 
     Auth (first one found wins):
       1. -Pat, or env ADO_PAT / AZURE_DEVOPS_EXT_PAT
@@ -90,6 +96,7 @@ param(
     [switch]$PullHistory,
     [int]$HistoryDays = 180,
     [int]$ArchiveDays = 30,
+    [int]$CommitDays = 365,
     [switch]$ClearArchive,
     [switch]$IncludeHistory,
     [switch]$Demo
@@ -111,7 +118,7 @@ $TypeColors = @{
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
-$ConfigKeys = 'Org', 'ServerUrl', 'Project', 'Team', 'Iteration', 'EpicId', 'AreaPath', 'Types', 'ClosedWithinDays', 'IncludeRemoved', 'MaxPrDetails', 'OutDir', 'HistoryDays', 'ArchiveDays'
+$ConfigKeys = 'Org', 'ServerUrl', 'Project', 'Team', 'Iteration', 'EpicId', 'AreaPath', 'Types', 'ClosedWithinDays', 'IncludeRemoved', 'MaxPrDetails', 'OutDir', 'HistoryDays', 'ArchiveDays', 'CommitDays'
 if (-not $ConfigPath) { $ConfigPath = Join-Path $ScriptDir 'ado_work_map.config.json' }
 if (-not $Demo -and (Test-Path $ConfigPath)) {
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
@@ -329,6 +336,47 @@ function Sync-PullRequests([hashtable]$PrCache, [string]$SinceUtc, [string[]]$Li
         }
         if ($todo.Count -gt $MaxPrDetails) { Write-Host "  $($todo.Count - $MaxPrDetails) left for the next run (raise -MaxPrDetails to get them now)" }
     }
+}
+
+# --------------------------------------------------------------------------- #
+# Commit counts for the heatmap: per day, repo and author. Only commit dates and
+# author names are read - never file contents or diffs.
+# --------------------------------------------------------------------------- #
+function Sync-Commits($Rows, [string]$SinceUtc, $Repos) {
+    # $Rows: existing rows (d, r, a, n). Returns the updated list.
+    $now = (Get-Date).ToUniversalTime()
+    $cut = $now.Date.AddDays(-$CommitDays).ToString('yyyy-MM-dd')
+    # Re-read the last couple of days every run so late pushes are counted; older days are kept as they are
+    $from = if ($SinceUtc -and @($Rows).Count) { ([datetime]$SinceUtc).ToUniversalTime().Date.AddDays(-2) } else { $now.Date.AddDays(-$CommitDays) }
+    $fromDay = $from.ToString('yyyy-MM-dd')
+    $out = New-Object 'Collections.Generic.List[object]'
+    foreach ($r in $Rows) { $d = [string]$r[0]; if ($d -lt $fromDay -and $d -ge $cut) { $out.Add(@($d, [string]$r[1], [string]$r[2], [int]$r[3])) } }
+    $agg = @{}
+    $calls = $script:ApiCalls; $n = 0
+    foreach ($rp in $Repos) {
+        $skip = 0
+        while ($true) {
+            try {
+                $res = Invoke-Ado "$ProjUrl/_apis/git/repositories/$($rp.id)/commits" -Query @{
+                    'searchCriteria.fromDate' = $from.ToString('yyyy-MM-ddTHH:mm:ssZ'); 'searchCriteria.$top' = 1000; 'searchCriteria.$skip' = $skip }
+            }
+            catch { break }   # empty or disabled repo
+            $page = @($res.value | Where-Object { $_ })
+            foreach ($c in $page) {
+                $cd = $c.committer.date
+                $d = if ($cd -is [datetime]) { $cd.ToUniversalTime().ToString('yyyy-MM-dd') } else { ([string]$cd).Substring(0, 10) }
+                if ($d -lt $fromDay) { continue }
+                $k = "$d|$($rp.id)|$([string]$c.author.name)"
+                $agg[$k] = 1 + [int]$agg[$k]
+            }
+            $n += $page.Count
+            if ($page.Count -lt 100) { break }   # last page (pages are never smaller than 100 unless they're the last)
+            $skip += $page.Count
+        }
+    }
+    foreach ($k in $agg.Keys) { $p = $k.Split([char]'|', 3); $out.Add(@($p[0], $p[1], $p[2], $agg[$k])) }
+    Write-Host "  $n commits read since $fromDay in $($script:ApiCalls - $calls) calls"
+    return , $out
 }
 
 # --------------------------------------------------------------------------- #
@@ -1052,7 +1100,21 @@ function New-DemoData {
         }
         if ($e.from -ne $e.to) { $changes.Add($e) }
     }
-    return @{ raw = $raw; cats = $cats; iterations = $iterations; repos = $repos; prs = $prDetails; changes = @($changes | Sort-Object { $_.when }) }
+    # A year of commit counts: busier mid-week, quieter on weekends and around holidays
+    $commits = New-Object 'Collections.Generic.List[object]'
+    for ($back = 364; $back -ge 0; $back--) {
+        $day = $today.AddDays(-$back)
+        $weekend = $day.DayOfWeek -eq 'Saturday' -or $day.DayOfWeek -eq 'Sunday'
+        $holiday = ($day.Month -eq 12 -and $day.Day -ge 22) -or ($day.Month -eq 1 -and $day.Day -le 2)
+        $ramp = 0.5 + 0.5 * (364 - $back) / 364
+        foreach ($rp in $repos) {
+            foreach ($who in $people) {
+                $chance = if ($weekend) { 0.04 } elseif ($holiday) { 0.08 } else { 0.32 * $ramp }
+                if ($rnd.NextDouble() -lt $chance) { $commits.Add(@($day.ToString('yyyy-MM-dd'), $rp.id, $who, $rnd.Next(1, 6))) }
+            }
+        }
+    }
+    return @{ raw = $raw; cats = $cats; iterations = $iterations; repos = $repos; prs = $prDetails; changes = @($changes | Sort-Object { $_.when }); commits = $commits }
 }
 
 # --------------------------------------------------------------------------- #
@@ -1065,7 +1127,16 @@ $HtmlTemplate = @'
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ADO Work Map</title>
-<script>try { const t = JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); if (t !== 'auto') document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<script>
+// Theme before first paint: a link like report.html#/sprints:dark wins over the saved choice
+(function () {
+  let t = 'auto';
+  try { t = JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); } catch (e) {}
+  const h = location.hash.replace(/^#\/?/, '').split(':')[1];
+  if (h === 'dark' || h === 'light') t = h;
+  if (t !== 'auto') document.documentElement.dataset.theme = t;
+})();
+</script>
 <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--panel:#fff;--text:#1a202c;--muted:#64748b;--line:#e2e8f0;--hover:#f1f5f9;--sel:#e8f0fe;
@@ -1163,7 +1234,8 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 .smap tr.ep-row td:first-child{font-weight:600;cursor:pointer}
 .smap tr.ft-row td:first-child{padding-left:24px}
 #trend svg,#velo svg{width:100%;height:auto;display:block}
-#trend text,#velo text{fill:var(--muted);font-size:11px}
+#trend text,#velo text,#hm text{fill:var(--muted);font-size:11px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 /* spider web */
 .web{display:grid;grid-template-columns:1fr 280px;gap:12px}
 .gwrap{position:relative}
@@ -1182,7 +1254,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 }
 @media (max-width:900px){
   main{padding:12px 16px} .fbar{padding:8px 16px}
-  .sgrid,.web{grid-template-columns:1fr}
+  .sgrid,.web,.two{grid-template-columns:1fr}
   .tree .row,.tree.sprint .row{grid-template-columns:14px 64px 66px 1fr auto}
   .tree .row>:nth-child(n+6){display:none}
 }
@@ -1263,7 +1335,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 
 <section id="maps">
   <div class="toolbar">
-    <div class="seg" id="mview"><button data-v="treemap">Treemap</button><button data-v="matrix">Repo matrix</button></div>
+    <div class="seg" id="mview"><button data-v="treemap">Treemap</button><button data-v="matrix">Repo matrix</button><button data-v="heatmap">Commit heatmap</button></div>
     <span class="sub" id="minfo"></span>
   </div>
   <div id="mbody"></div>
@@ -1418,14 +1490,17 @@ function makeTree(el, o) {
 $('#title').textContent = D.project + ' - Work Map';
 $('#meta').innerHTML = `${esc(D.org)} / <a href="${esc(D.projectUrl)}" target="_blank" rel="noopener">${esc(D.project)}</a> &middot; ${D.items.length.toLocaleString()} work items &middot; ${SPR.length} sprints &middot; data pulled ${esc(fmtWhen(D.runUtc) || D.generated)}` +
   (D.sprint ? ` &middot; current sprint: <b>${esc(D.sprint.name)}</b>` : '');
-let activeTab = store.get('tab', 'map');
+// Links can open a tab directly: ado_work_map.html#/sprints (or #/maps:dark)
+let activeTab = location.hash.replace(/^#\/?/, '').split(':')[0] || store.get('tab', 'map');
 function showTab(t) {
   if (!$('#' + t)) t = 'map';
   activeTab = t; store.set('tab', t);
+  try { history.replaceState(null, '', '#/' + t); } catch (e) {}
   $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
   $$('main>section').forEach(s => s.classList.toggle('on', s.id === t));
   if (t === 'web') initGraph();
   if (t === 'maps') renderMaps();
+  if (t === 'sprints' && !renderSprints.scrolled) renderSprints();
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -1542,7 +1617,9 @@ function renderSprints() {
   const st = sprintStats();
   $('#strip').innerHTML = SPR.map((s, i) => { const x = st[i], w = x.tasks.done + x.tasks.active + x.tasks.new ? x.tasks : x.work;
     return `<button class="sp tf-${esc(s.timeFrame || 'none')}${i === selSprint ? ' on' : ''}" data-i="${i}"><b class="t">${esc(s.name)}</b><span class="sub">${s.start ? fmtDate(s.start) + ' &ndash; ' + fmtDate(s.finish) : 'no dates'}</span>${bar(w)}<span class="sub">${w.done}/${w.done + w.active + w.new} done${x.pts ? ' &middot; ' + x.ptsDone + '/' + x.pts + ' pts' : ''}</span></button>`; }).join('');
-  const on = $('#strip .sp.on'); if (on && !renderSprints.scrolled) { on.scrollIntoView({inline: 'center', block: 'nearest'}); renderSprints.scrolled = true; }
+  // Centre the selected sprint in the strip (scroll the strip only, never the page)
+  const strip = $('#strip'), on = $('#strip .sp.on');
+  if (on && !renderSprints.scrolled && strip.clientWidth) { strip.scrollLeft = on.offsetLeft - strip.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2; renderSprints.scrolled = true; }
   segSet('#sview', 'v', sprintView);
   if (sprintView === 'velocity') renderVelocity(st);
   else if (sprintView === 'map') renderSprintMap();
@@ -1606,7 +1683,7 @@ function renderVelocity(st) {
     .filter(v => v.all > 0 || v.s.timeFrame === 'current');
   if (!vals.length) { $('#sbody').innerHTML = '<p class="sub">No stories or bugs in any sprint yet.</p>'; return; }
   const css = getComputedStyle(document.documentElement), col = v => css.getPropertyValue(v).trim();
-  const W = Math.max(600, vals.length * 46), H = 260, L = 40, B = 60, T = 14;
+  const W = Math.max(700, vals.length * 56), H = 280, L = 40, B = 60, T = 14;
   const max = Math.max(1, ...vals.map(v => v.all)), bw = (W - L - 10) / vals.length;
   const y = v => T + (H - T - B) * (1 - v / max);
   const past = vals.filter(v => v.s.timeFrame === 'past');
@@ -1617,7 +1694,7 @@ function renderVelocity(st) {
       <rect x="${x0}" y="${y(v.done)}" width="${w}" height="${y(0) - y(v.done)}" fill="${v.i === curIdx ? col('--active') : col('--done')}"/>
       <text x="${x0 + w / 2}" y="${H - B + 14}" text-anchor="end" transform="rotate(-35 ${x0 + w / 2} ${H - B + 14})">${esc(v.s.name.slice(0, 18))}</text></g>`; }).join('');
   const grid = [0, .5, 1].map(f => { const v = Math.round(max * f); return `<line x1="${L}" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="${col('--line')}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`; }).join('');
-  $('#sbody').innerHTML = `<div class="card" id="velo" style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="min-width:${Math.min(W, 1400)}px">${grid}${bars}
+  $('#sbody').innerHTML = `<div class="card" id="velo" style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;min-width:${Math.min(W, 900)}px">${grid}${bars}
     ${avg ? `<line x1="${L}" x2="${W - 10}" y1="${y(avg)}" y2="${y(avg)}" stroke="${col('--accent')}" stroke-dasharray="5 4"/><text x="${W - 12}" y="${y(avg) - 4}" text-anchor="end" style="fill:${col('--accent')}">avg of last ${Math.min(6, past.length)}: ${avg}</text>` : ''}</svg>
     <div class="legend" style="padding:0 6px"><span style="--c:var(--done)">Done</span><span style="--c:var(--line)">Planned</span><span style="--c:var(--active)">Current sprint</span></div></div>
     <p class="sub">Click a bar to open that sprint.</p>`;
@@ -1738,7 +1815,7 @@ function squarify(items, x, y, w, h) {
 const hexRgb = h => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 function renderMaps() {
   segSet('#mview', 'v', mapsView);
-  if (mapsView === 'matrix') renderRepoMatrix(); else renderTreemap();
+  if (mapsView === 'matrix') renderRepoMatrix(); else if (mapsView === 'heatmap') renderHeatmap(); else renderTreemap();
 }
 $$('#mview button').forEach(b => b.onclick = () => { mapsView = b.dataset.v; store.set('mapsView', mapsView); renderMaps(); });
 
@@ -1753,20 +1830,30 @@ function renderTreemap() {
   else if (F.epic) ids = byId.has(+F.epic) ? byId.get(+F.epic).children : [];
   else ids = D.roots;
   let tiles = ids.map(id => byId.get(id)).filter(it => it && it.bucket !== 'removed').map(it => {
-    const r = roll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) ? 1 : 0)}; }).filter(t => t.v > 0).sort((a, b) => b.v - a.v);
-  const hidden = Math.max(0, tiles.length - 400); tiles = tiles.slice(0, 400);
+    const r = roll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) ? 1 : 0)}; }).filter(t => t.v > 0).sort((a, b) => b.v - a.v);  const hidden = Math.max(0, tiles.length - 400); tiles = tiles.slice(0, 400);
   const trail = []; for (let a = tmRoot != null ? byId.get(tmRoot) : null; a; a = byId.get(a.parent)) trail.unshift(a);
   const rootLabel = F.epic === 'none' ? 'Not under an epic' : F.epic ? 'Selected epic' : 'All epics';
   $('#minfo').innerHTML = `<a href="#" data-up="">${rootLabel}</a>` + trail.map(a => ` &rsaquo; <a href="#" data-up="${a.id}">#${a.id} ${esc(a.title.slice(0, 40))}</a>`).join('') +
     ` &middot; size = work items under each tile, colour = % done${hidden ? ` &middot; ${hidden} smallest tiles not drawn` : ''}`;
   const el = $('#mbody'), W = Math.max(600, el.clientWidth || 1000), H = Math.max(420, Math.min(720, window.innerHeight - 300));
-  const rects = squarify(tiles, 0, 0, W, H);
-  el.innerHTML = rects.length ? `<div class="card" style="padding:0;overflow:hidden"><svg id="tm" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;max-width:100%;height:auto">${rects.map(t => {
+  const tileOf = it => { const r = roll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) ? 1 : 0)}; };
+  const tip = t => `<title>${esc(t.it.type)} #${t.it.id} ${esc(t.it.title)}\n${t.r.done}/${t.r.total} done (${t.r.pct}%)${t.it.assignee ? '\n' + esc(t.it.assignee) : ''}${t.it.children.length ? '\nClick to zoom in' : '\nDouble-click to open in Azure DevOps'}</title>`;
+  // Two levels: big tiles show their children inside, under a header strip
+  const draw = (t, depth) => {
     const it = t.it, big = t.w > 70 && t.h > 30, tall = t.h > 46;
-    return `<g data-id="${it.id}" style="cursor:${it.children.length ? 'zoom-in' : 'pointer'}"><title>${esc(it.type)} #${it.id} ${esc(it.title)}\n${t.r.done}/${t.r.total} done (${t.r.pct}%)${it.assignee ? '\n' + esc(it.assignee) : ''}${it.children.length ? '\nClick to zoom in' : '\nDouble-click to open in Azure DevOps'}</title>
-      <rect x="${t.x + 1}" y="${t.y + 1}" width="${Math.max(0, t.w - 2)}" height="${Math.max(0, t.h - 2)}" rx="3" fill="${shade(t.r.pct)}" stroke="${C[it.kind] || '#888'}" stroke-width="2"/>
-      ${big ? `<text x="${t.x + 7}" y="${t.y + 18}" class="tml">${esc(it.title.slice(0, Math.floor(t.w / 7)))}</text>` : ''}
-      ${big && tall ? `<text x="${t.x + 7}" y="${t.y + 34}" class="tml s">#${it.id} &middot; ${t.r.pct}% &middot; ${t.r.total} items</text>` : ''}</g>`; }).join('')}</svg></div>
+    const kids = depth === 0 && it.children.length && t.w > 150 && t.h > 100
+      ? it.children.map(id => byId.get(id)).filter(k => k && k.bucket !== 'removed').map(tileOf).filter(k => k.v > 0).sort((a, b) => b.v - a.v).slice(0, 150) : [];
+    const box = `<rect x="${t.x + 1}" y="${t.y + 1}" width="${Math.max(0, t.w - 2)}" height="${Math.max(0, t.h - 2)}" rx="3" fill="${shade(t.r.pct)}" stroke="${C[it.kind] || '#888'}" stroke-width="${depth ? 1 : 2}"/>`;
+    if (kids.length) {
+      const inner = squarify(kids, t.x + 4, t.y + 24, t.w - 8, t.h - 28);
+      return `<g data-id="${it.id}" style="cursor:zoom-in">${tip(t)}${box}<text x="${t.x + 8}" y="${t.y + 17}" class="tml">${esc(it.title.slice(0, Math.floor(t.w / 7.5)))} &middot; ${t.r.pct}%</text></g>` + inner.map(k => draw(k, 1)).join('');
+    }
+    return `<g data-id="${it.id}" style="cursor:${it.children.length ? 'zoom-in' : 'pointer'}">${tip(t)}${box}
+      ${big ? `<text x="${t.x + 7}" y="${t.y + 18}" class="tml${depth ? ' s' : ''}">${esc(it.title.slice(0, Math.floor(t.w / 7)))}</text>` : ''}
+      ${big && tall ? `<text x="${t.x + 7}" y="${t.y + 34}" class="tml s">#${it.id} &middot; ${t.r.pct}% &middot; ${t.r.total} items</text>` : ''}</g>`;
+  };
+  const rects = squarify(tiles, 0, 0, W, H);
+  el.innerHTML = rects.length ? `<div class="card" style="padding:0;overflow:hidden"><svg id="tm" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;max-width:100%;height:auto">${rects.map(t => draw(t, 0)).join('')}</svg></div>
     <div class="legend"><span style="--c:${shade(0)}">0% done</span><span style="--c:${shade(50)}">50%</span><span style="--c:${shade(100)}">100% done</span><span class="sub">Tile border = work item type. Click to zoom in, double-click to open in Azure DevOps.</span></div>`
     : '<p class="sub">Nothing to draw - this level has no work items that match the filters.</p>';
 }
@@ -1801,6 +1888,67 @@ function renderRepoMatrix() {
     <p class="sub">Click a cell to open that ${byEpic ? 'feature' : 'epic'} in the spider web. Pick an epic in the filter bar to break it down by feature.</p>`;
 }
 
+// Commit heatmap: commits per day for the last 52 weeks, by repo and author (counts only, no code)
+let hmRepo = '', hmAuthor = '';
+function renderHeatmap() {
+  const CM = D.commits || {rows: []}, rows = CM.rows || [];
+  const repoName = new Map(D.graph.nodes.filter(n => n.kind === 'Repo').map(n => [n.id.slice(1), n.label]));
+  const rname = id => repoName.get(id) || ('repo ' + String(id).slice(0, 8));
+  if (!rows.length) {
+    $('#minfo').textContent = '';
+    $('#mbody').innerHTML = `<p class="sub">No commit data yet. Each run reads commit dates and authors (never code) for the last ${CM.days || 365} days; set -CommitDays 0 to turn this off.</p>`;
+    return;
+  }
+  const repos = uniq(rows.map(r => r[1])).sort((a, b) => rname(a).localeCompare(rname(b)));
+  const authors = uniq(rows.map(r => r[2]));
+  if (hmRepo && !repos.includes(hmRepo)) hmRepo = '';
+  if (hmAuthor && !authors.includes(hmAuthor)) hmAuthor = '';
+  const sel = rows.filter(r => (!hmRepo || r[1] === hmRepo) && (!hmAuthor || r[2] === hmAuthor));
+  const byDay = new Map(), byRepo = new Map(), byWho = new Map(), lastDay = new Map();
+  sel.forEach(([d, r, a, n]) => { byDay.set(d, (byDay.get(d) || 0) + n); byRepo.set(r, (byRepo.get(r) || 0) + n); byWho.set(a, (byWho.get(a) || 0) + n);
+    if (!lastDay.has(r) || lastDay.get(r) < d) lastDay.set(r, d); });
+  // Grid: 53 week columns ending this week, Sunday at the top
+  const day = 864e5, today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const start = new Date(today.getTime() - (52 * 7 + today.getUTCDay()) * day);
+  const max = Math.max(1, ...byDay.values());
+  const level = n => !n ? 0 : n <= max * .25 ? 1 : n <= max * .5 ? 2 : n <= max * .75 ? 3 : 4;
+  const fill = l => l ? `color-mix(in srgb, var(--done) ${[0, 30, 55, 78, 100][l]}%, var(--panel))` : 'var(--line)';
+  const cs = 13, gap = 3, L = 30, T = 20, weeks = 53, W = L + weeks * (cs + gap), H = T + 7 * (cs + gap);
+  let cells = '', months = '', lastMonth = -1, total = 0, active = 0, best = ['', 0];
+  for (let w = 0; w < weeks; w++) for (let k = 0; k < 7; k++) {
+    const dt = new Date(start.getTime() + (w * 7 + k) * day); if (dt > today) continue;
+    const key = dt.toISOString().slice(0, 10), n = byDay.get(key) || 0;
+    if (n) { total += n; active++; if (n > best[1]) best = [key, n]; }
+    if (k === 0 && dt.getUTCMonth() !== lastMonth) { lastMonth = dt.getUTCMonth();
+      months += `<text x="${L + w * (cs + gap)}" y="12">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</text>`; }
+    cells += `<rect x="${L + w * (cs + gap)}" y="${T + k * (cs + gap)}" width="${cs}" height="${cs}" rx="2" style="fill:${fill(level(n))}"><title>${n} commit${n === 1 ? '' : 's'} on ${fmtDate(key + 'T00:00:00Z')} ${key.slice(0, 4)}</title></rect>`;
+  }
+  const wd = [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text x="0" y="${T + k * (cs + gap) + 10}">${t}</text>`).join('');
+  const legend = [0, 1, 2, 3, 4].map(l => `<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${fill(l)};vertical-align:-1px"></span>`).join(' ');
+  const top = (m, label) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) =>
+    `<tr><td class="t" style="max-width:240px">${esc(label(k))}</td><td class="n">${v.toLocaleString()}</td><td style="width:40%"><div class="bar"><i class="b-done" style="width:${100 * v / Math.max(...m.values())}%"></i></div></td></tr>`).join('');
+  $('#minfo').innerHTML = `Commits per day, last 52 weeks &middot; counts only (dates and authors), no code`;
+  $('#mbody').innerHTML = `
+    <div class="toolbar">
+      <select id="hmRepo">${opt('', 'All repos (' + repos.length + ')')}${repos.map(r => opt(r, rname(r), r === hmRepo)).join('')}</select>
+      <select id="hmAuthor">${opt('', 'Everyone (' + authors.length + ')')}${authors.map(a => opt(a, a, a === hmAuthor)).join('')}</select>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span class="sub">Commits</span><b>${total.toLocaleString()}</b></div>
+      <div class="kpi"><span class="sub">Active days</span><b>${active}</b></div>
+      <div class="kpi"><span class="sub">Busiest day</span><b>${best[1] || 0}</b><span class="sub">${best[0] ? fmtDate(best[0] + 'T00:00:00Z') + ' ' + best[0].slice(0, 4) : ''}</span></div>
+      <div class="kpi"><span class="sub">Per active day</span><b>${active ? (total / active).toFixed(1) : 0}</b></div>
+    </div>
+    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W * 1.25}px;min-width:${W}px">${months}${wd}${cells}</svg>
+      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More</div></div>
+    <div class="two" style="margin-top:12px">
+      <div class="card"><h3>Top repos</h3><table><tbody>${top(byRepo, rname)}</tbody></table></div>
+      <div class="card"><h3>Top authors</h3><table><tbody>${top(byWho, a => a)}</tbody></table></div>
+    </div>`;
+  $('#hmRepo').onchange = e => { hmRepo = e.target.value; renderHeatmap(); };
+  $('#hmAuthor').onchange = e => { hmAuthor = e.target.value; renderHeatmap(); };
+}
+
 function renderAll() {
   renderKpis(); renderEpicList(); renderRight(); renderSprints(); renderChanges();
   if (activeTab === 'maps') renderMaps();
@@ -1808,7 +1956,7 @@ function renderAll() {
 }
 
 // Theme: Auto follows Windows, or pick Light / Dark. Charts, maps and the graph redraw in the new colours.
-$('#theme').value = (() => { try { return JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); } catch (e) { return 'auto'; } })();
+$('#theme').value = document.documentElement.dataset.theme || 'auto';
 $('#theme').onchange = e => {
   const t = e.target.value;
   try { localStorage.setItem('adomap.theme', JSON.stringify(t)); } catch (err) {}
@@ -1990,6 +2138,7 @@ $ChangeLogPath = Join-Path $OutDir 'changelog.csv'
 $WiCachePath = Join-Path $CacheDir 'workitems.json'
 $PrCachePath = Join-Path $CacheDir 'pullrequests.json'
 $MetaPath = Join-Path $CacheDir 'meta.json'
+$CommitCachePath = Join-Path $CacheDir 'commits.json'
 $script:ApiCalls = 0
 
 if ($ClearArchive) {
@@ -2012,6 +2161,7 @@ if ($Demo) {
     $d = New-DemoData
     $raw = $d.raw; $cats = $d.cats; $iterations = $d.iterations; $repos = $d.repos; $prs = $d.prs
     $demoChanges = $d.changes
+    $commitRows = $d.commits
     $prevRunUtc = (Get-Date).ToUniversalTime().AddDays(-3).ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
 elseif ($Offline) {
@@ -2029,6 +2179,8 @@ elseif ($Offline) {
     $iterations = @($meta.iterations); $repos = @($meta.repos)
     $pc = Read-JsonFile $PrCachePath
     $prs = if ($pc) { ConvertTo-Hashtable $pc.prs } else { @{} }
+    $cc = Read-JsonFile $CommitCachePath
+    $commitRows = if ($cc) { @($cc.rows) } else { @() }
     $runUtc = [string]$wc.lastRunUtc
     $prevRunUtc = [string]$wc.prevRunUtc
 }
@@ -2071,6 +2223,16 @@ else {
     Sync-PullRequests $prs $prSince $linked
     Write-JsonFile $PrCachePath @{ project = $Project; lastRunUtc = $runUtc; prs = $prs }
     Write-JsonFile $MetaPath @{ org = $Org; serverUrl = $ServerUrl; project = $Project; cats = $cats; iterations = $iterations; repos = $repos }
+
+    $commitRows = @()
+    if ($CommitDays -gt 0) {
+        Write-Host 'Syncing commit counts for the heatmap (dates and authors only)...'
+        $cc = if ($Full) { $null } else { Read-JsonFile $CommitCachePath }
+        $rowsIn = if ($cc -and $cc.project -eq $Project -and [int]$cc.days -eq $CommitDays) { @($cc.rows) } else { @() }
+        $ccSince = if ($rowsIn.Count) { [string]$cc.lastRunUtc } else { $null }
+        $commitRows = Sync-Commits $rowsIn $ccSince $repos
+        Write-JsonFile $CommitCachePath @{ project = $Project; days = $CommitDays; lastRunUtc = $runUtc; rows = $commitRows }
+    }
     Write-Host "  $($script:ApiCalls) Azure DevOps calls this run"
 
     if ($PullHistory) { Import-AdoHistory $HistoryDays $HistoryPath }
@@ -2093,6 +2255,7 @@ else {
 }
 $model.runUtc = $runUtc
 $model.prevRunUtc = $prevRunUtc
+$model.commits = @{ days = $CommitDays; rows = $commitRows }
 
 $json = ConvertTo-Json -InputObject $model -Depth 12 -Compress
 $utf8 = New-Object Text.UTF8Encoding $false

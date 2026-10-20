@@ -53,6 +53,9 @@ rem  Days of history to pull with -PullHistory (default 180)
 set "ADO_HISTORY_DAYS="
 rem  Days to keep the daily copies in archive\ (default 30, 0 = don't archive)
 set "ADO_ARCHIVE_DAYS="
+rem  Days of commit history for the commit heatmap (default 365, 0 = off).
+rem  Only commit dates and author names are read, never code.
+set "ADO_COMMIT_DAYS="
 rem  Azure DevOps Server (on-premises) only: collection server URL, e.g. https://tfs.contoso.com/tfs
 rem  (then put the collection name in ADO_ORG). Leave empty for dev.azure.com.
 set "ADO_SERVER_URL="
@@ -85,6 +88,7 @@ if not "%ADO_CLOSED_WITHIN_DAYS%"=="" set ARGS=%ARGS% -ClosedWithinDays %ADO_CLO
 if not "%ADO_MAX_PR_DETAILS%"=="" set ARGS=%ARGS% -MaxPrDetails %ADO_MAX_PR_DETAILS%
 if not "%ADO_HISTORY_DAYS%"=="" set ARGS=%ARGS% -HistoryDays %ADO_HISTORY_DAYS%
 if not "%ADO_ARCHIVE_DAYS%"=="" set ARGS=%ARGS% -ArchiveDays %ADO_ARCHIVE_DAYS%
+if not "%ADO_COMMIT_DAYS%"=="" set ARGS=%ARGS% -CommitDays %ADO_COMMIT_DAYS%
 if not "%ADO_SERVER_URL%"=="" set ARGS=%ARGS% -ServerUrl "%ADO_SERVER_URL%"
 if not "%ADO_OUT_DIR%"=="" set ARGS=%ARGS% -OutDir "%ADO_OUT_DIR%"
 if "%ADO_INCLUDE_REMOVED%"=="1" set ARGS=%ARGS% -IncludeRemoved
