@@ -68,6 +68,10 @@ Everything goes to `ado_report\` next to the script:
 | `cache\` | Work items, PR info and settings from the last pull |
 | `archive\` | One copy of the report per day, kept 30 days (`-ArchiveDays`) |
 
+## License
+
+MIT - see [LICENSE](LICENSE).
+
 ## Running it blocked?
 
 If Windows blocks the script, the starter already uses `-ExecutionPolicy Bypass`. To run the `.ps1` directly:
