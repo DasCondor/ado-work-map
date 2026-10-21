@@ -14,3 +14,7 @@ ado_work_map.config.json
 vscode-extension/resources/
 vscode-extension/LICENSE.txt
 *.vsix
+
+# Azure DevOps extension build output (generated from ado_work_map.ps1 by build.ps1)
+azure-devops-extension/dist/
+azure-devops-extension/LICENSE.txt

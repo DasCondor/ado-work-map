@@ -39,6 +39,7 @@ in an interactive page you can open in any browser.
 - [What's in the report](#whats-in-the-report)
 - [Quick start](#quick-start)
 - [VS Code extension](#vs-code-extension)
+- [Azure DevOps extension](#azure-devops-extension)
 - [Launch pad](#launch-pad)
 - [How it works](#how-it-works)
 - [Commands](#commands)
@@ -139,6 +140,21 @@ code --install-extension DasCondor.ado-work-map
 **Or from GitHub:** download the `.vsix` from the [latest release](https://github.com/DasCondor/ado-work-map/releases/latest), then in VS Code open the Extensions view, click **...** > **Install from VSIX...** and pick the file. Updates install the same way.
 
 Then click the **ADO Work Map** icon in the Activity Bar and follow the checklist. To build the `.vsix` yourself (no Node.js needed): `powershell -ExecutionPolicy Bypass -File vscode-extension\build.ps1`.
+
+## Azure DevOps extension
+
+The same report as a **Work Map** hub in **Boards**, inside Azure DevOps itself: no script, no token, nothing to run.
+
+- **Your own access.** It reads with the signed-in person's permissions, so everyone sees only what they can already see.
+- **Only pulls what changed.** The first visit pulls everything. The data is kept in that person's browser (IndexedDB), so later visits only ask for the changes, and the change log builds up between visits.
+- **Settings in the hub:** team (for sprints), area path, work item types, epic ids, closed-within days, commit heatmap days. **Pull history** fills the progress chart from Analytics.
+- **Read-only.** Scopes: Work items, Code, Project and team, Analytics (all read). Like the script, it reads PR metadata and commit dates, never file contents or diffs. There's no server behind it: nothing leaves Azure DevOps and the browser.
+
+Azure DevOps Services only (not Azure DevOps Server). The hub is generated from the report template inside `ado_work_map.ps1`, so the two always match.
+
+**Install:** the extension is published privately and shared with organizations on request. An organization admin then installs it from **Organization settings > Extensions > Shared**. To publish it under your own publisher instead, change `publisher` in `azure-devops-extension/vss-extension.json`, build it, and upload the `.vsix` at [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage).
+
+**Build:** `powershell -ExecutionPolicy Bypass -File azure-devops-extension\build.ps1` writes `dist\` and packages the `.vsix` with Microsoft's [tfx-cli](https://www.npmjs.com/package/tfx-cli) (`npm install -g tfx-cli`). The `.vsix` is also attached to each [release](https://github.com/DasCondor/ado-work-map/releases).
 
 ## Launch pad
 

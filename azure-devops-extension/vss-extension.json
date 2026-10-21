@@ -1,0 +1,43 @@
+{
+  "manifestVersion": 1,
+  "id": "ado-work-map-boards",
+  "publisher": "DasCondor",
+  "version": "1.0.0",
+  "name": "ADO Work Map",
+  "description": "A Work Map hub in Boards: epics to tasks, every sprint, what changed, repos, a commit heatmap and a spider web of links. Uses your own access; data stays in your browser.",
+  "public": false,
+  "galleryFlags": ["Preview"],
+  "categories": ["Azure Boards"],
+  "tags": ["work items", "epics", "features", "sprints", "delivery map", "dependencies", "pull requests", "commits", "heatmap", "visualization"],
+  "targets": [{"id": "Microsoft.VisualStudio.Services.Cloud"}],
+  "icons": {"default": "images/icon.png"},
+  "content": {
+    "details": {"path": "overview.md"},
+    "license": {"path": "LICENSE.txt"}
+  },
+  "links": {
+    "repository": {"uri": "https://github.com/DasCondor/ado-work-map"},
+    "support": {"uri": "https://github.com/DasCondor/ado-work-map/issues"},
+    "license": {"uri": "https://github.com/DasCondor/ado-work-map/blob/main/LICENSE"}
+  },
+  "repository": {"type": "git", "uri": "https://github.com/DasCondor/ado-work-map"},
+  "branding": {"color": "#0f62fe", "theme": "dark"},
+  "scopes": ["vso.work", "vso.code", "vso.project", "vso.analytics"],
+  "files": [
+    {"path": "dist", "addressable": true},
+    {"path": "images", "addressable": true}
+  ],
+  "contributions": [
+    {
+      "id": "work-map-hub",
+      "type": "ms.vss-web.hub",
+      "description": "Delivery map, sprints, changes, maps and spider web for this project",
+      "targets": ["ms.vss-work-web.work-hub-group"],
+      "properties": {
+        "name": "Work Map",
+        "order": 100,
+        "uri": "dist/hub.html"
+      }
+    }
+  ]
+}
