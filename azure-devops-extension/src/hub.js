@@ -385,7 +385,11 @@ async function syncCommits(rows, since, repos, days) {
       for (const c of page) {
         const d = String((c.committer && c.committer.date) || '').slice(0, 10);
         if (!d || d < fromDay) continue;
-        const k = `${d}|${rp.id}|${String((c.author && c.author.name) || '')}`;
+        // Name plus the part of the email before the @ (never the full address), so the report can
+        // join one person's commits made under different names, e.g. First.Last.CTR
+        const local = String((c.author && c.author.email) || '').split('@')[0];
+        const who = String((c.author && c.author.name) || '') + (local ? ` <${local}>` : '');
+        const k = `${d}|${rp.id}|${who}`;
         agg.set(k, (agg.get(k) || 0) + 1);
       }
       n += page.length;

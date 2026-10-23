@@ -27,7 +27,8 @@
       * pull requests: metadata only (title, status, branches, author - never
         code, diffs or commits), read from the project's PR list 1000 per call.
         Completed PRs never change, so later runs only re-check active ones.
-      * commits (heatmap): dates and author names only, for -CommitDays days;
+      * commits (heatmap): dates, author names and the part of the email before
+        the @ (to join one person's accounts) only, for -CommitDays days;
         later runs re-read just the last two days
 
     Auth (first one found wins):
@@ -391,7 +392,12 @@ function Sync-Commits($Rows, [string]$SinceUtc, $Repos) {
                 $cd = $c.committer.date
                 $d = if ($cd -is [datetime]) { $cd.ToUniversalTime().ToString('yyyy-MM-dd') } else { ([string]$cd).Substring(0, 10) }
                 if ($d -lt $fromDay) { continue }
-                $k = "$d|$($rp.id)|$([string]$c.author.name)"
+                # Name plus the part of the email before the @ (never the full address), so the report can
+                # join one person's commits made under different names, e.g. First.Last.CTR
+                $who = [string]$c.author.name
+                $local = ([string]$c.author.email).Split('@')[0]
+                if ($local) { $who += " <$local>" }
+                $k = "$d|$($rp.id)|$who"
                 $agg[$k] = 1 + [int]$agg[$k]
             }
             $n += $page.Count
@@ -1135,7 +1141,11 @@ function New-DemoData {
         foreach ($rp in $repos) {
             foreach ($who in $people) {
                 $chance = if ($weekend) { 0.04 } elseif ($holiday) { 0.08 } else { 0.32 * $ramp }
-                if ($rnd.NextDouble() -lt $chance) { $commits.Add(@($day.ToString('yyyy-MM-dd'), $rp.id, $who, $rnd.Next(1, 6))) }
+                # Authors as "Name <email before the @>"; the first person also commits from a contractor
+                # account (First.Last.CTR), which the report joins back into one person
+                $local = ($who -replace ' ', '.').ToLower()
+                $author = if ($who -eq $people[0] -and $rnd.NextDouble() -lt 0.3) { "$($who -replace ' ', '.').CTR <$local.ctr>" } else { "$who <$local>" }
+                if ($rnd.NextDouble() -lt $chance) { $commits.Add(@($day.ToString('yyyy-MM-dd'), $rp.id, $author, $rnd.Next(1, 6))) }
             }
         }
     }
@@ -1259,6 +1269,20 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 .smap tr.ft-row td:first-child{padding-left:24px}
 #trend svg,#velo svg{width:100%;height:auto;display:block}
 #trend text,#velo text,#hm text{fill:var(--muted);font-size:11px}
+/* maps narrowed to one sprint */
+.scopebar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px solid var(--accent);border-left-width:5px;border-radius:8px;background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.scopebar b.sn{font-size:16px}
+.scopebar .grow{flex:1}
+#msprint.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+#hm{position:relative}
+#hm rect[data-f]{cursor:pointer}
+#hmtip.pin{pointer-events:auto;line-height:1.7;padding-right:26px}
+#hmtip .x{position:absolute;top:2px;right:4px;background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;line-height:1}
+#hm rect[data-f]:hover{stroke:var(--text);stroke-width:1.5}
+#hm text.hl{fill:var(--text);font-size:12px}
+#hm text.wk{font-size:10px}
+#hm rect.wkend{fill:var(--hover)}
+tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[data-who].on td{background:var(--sel)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 .toast[hidden]{display:none}
@@ -1366,8 +1390,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 <section id="maps">
   <div class="toolbar">
     <div class="seg" id="mview"><button data-v="treemap">Treemap</button><button data-v="matrix">Repo matrix</button><button data-v="heatmap">Commit heatmap</button></div>
+    <select id="msprint" title="Show one sprint in every map"></select>
+    <button class="btn" id="mcur" hidden>Current sprint</button>
     <span class="sub" id="minfo"></span>
   </div>
+  <div id="mscope"></div>
   <div id="mbody"></div>
 </section>
 
@@ -1854,8 +1881,47 @@ function squarify(items, x, y, w, h) {
   return out;
 }
 const hexRgb = h => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+// Every map can be narrowed to one sprint: -1 = all sprints (the heatmap then shows the last 52 weeks)
+let mapsSprint = store.get('mapsSprint', -1);
+if (!(mapsSprint >= -1 && mapsSprint < SPR.length)) mapsSprint = -1;
+const spPass = it => mapsSprint < 0 || it.sp === mapsSprint;
+let mrollMemo = new Map();
+function mroll(it) {   // roll() limited to the chosen sprint
+  if (mapsSprint < 0) return roll(it);
+  let r = mrollMemo.get(it.id); if (r) return r;
+  r = {done: 0, active: 0, new: 0};
+  for (const l of leaves(it.id)) { const x = byId.get(l); if (x.bucket in r && passNoEpic(x) && spPass(x)) r[x.bucket]++; }
+  r.total = r.done + r.active + r.new;
+  r.pct = r.total ? Math.round(100 * r.done / r.total) : 0;
+  mrollMemo.set(it.id, r); return r;
+}
+function setMapsSprint(i) { mapsSprint = i; store.set('mapsSprint', i); renderMaps(); }
+function renderMapScope() {
+  const sel = $('#msprint');
+  sel.innerHTML = opt('-1', 'All sprints') + SPR.map((s, i) => opt(i, `${s.name}${i === curIdx ? ' (current)' : ''}${s.start ? ' - ' + fmtDate(s.start) : ''}`)).join('');
+  sel.value = String(mapsSprint);
+  sel.hidden = !SPR.length;
+  sel.classList.toggle('on', mapsSprint >= 0);
+  $('#mcur').hidden = curIdx < 0 || mapsSprint === curIdx;
+  const s = SPR[mapsSprint];
+  if (!s) { $('#mscope').innerHTML = ''; return; }
+  const n = D.items.filter(it => it.sp === mapsSprint && pass(it)).length;
+  const when = s.start ? `${fmtDate(s.start)} &ndash; ${fmtDate(s.finish)}` : 'no dates set';
+  const tf = mapsSprint === curIdx ? '<b>current sprint</b>' : s.timeFrame === 'past' ? 'finished' : s.timeFrame === 'future' ? 'upcoming' : '';
+  $('#mscope').innerHTML = `<div class="scopebar"><span class="sub">Every map shows one sprint:</span><b class="sn">${esc(s.name)}</b>
+    <span>${when}${tf ? ' &middot; ' + tf : ''} &middot; ${n.toLocaleString()} work item${n === 1 ? '' : 's'}</span><span class="grow"></span>
+    <button class="btn" data-step="-1"${mapsSprint === 0 ? ' disabled' : ''}>&lsaquo; Previous</button>
+    <button class="btn" data-step="1"${mapsSprint === SPR.length - 1 ? ' disabled' : ''}>Next &rsaquo;</button>
+    <button class="btn" data-step="all">Show all sprints</button></div>`;
+}
+$('#msprint').onchange = e => setMapsSprint(+e.target.value);
+$('#mcur').onclick = () => setMapsSprint(curIdx);
+$('#mscope').onclick = e => { const b = e.target.closest('button[data-step]'); if (!b) return;
+  setMapsSprint(b.dataset.step === 'all' ? -1 : Math.max(0, Math.min(SPR.length - 1, mapsSprint + +b.dataset.step))); };
 function renderMaps() {
   segSet('#mview', 'v', mapsView);
+  mrollMemo = new Map();
+  renderMapScope();
   if (mapsView === 'matrix') renderRepoMatrix(); else if (mapsView === 'heatmap') renderHeatmap(); else renderTreemap();
 }
 $$('#mview button').forEach(b => b.onclick = () => { mapsView = b.dataset.v; store.set('mapsView', mapsView); renderMaps(); });
@@ -1871,13 +1937,13 @@ function renderTreemap() {
   else if (F.epic) ids = byId.has(+F.epic) ? byId.get(+F.epic).children : [];
   else ids = D.roots;
   let tiles = ids.map(id => byId.get(id)).filter(it => it && it.bucket !== 'removed').map(it => {
-    const r = roll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) ? 1 : 0)}; }).filter(t => t.v > 0).sort((a, b) => b.v - a.v);  const hidden = Math.max(0, tiles.length - 400); tiles = tiles.slice(0, 400);
+    const r = mroll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) && spPass(it) ? 1 : 0)}; }).filter(t => t.v > 0).sort((a, b) => b.v - a.v);  const hidden = Math.max(0, tiles.length - 400); tiles = tiles.slice(0, 400);
   const trail = []; for (let a = tmRoot != null ? byId.get(tmRoot) : null; a; a = byId.get(a.parent)) trail.unshift(a);
   const rootLabel = F.epic === 'none' ? 'Not under an epic' : F.epic ? 'Selected epic' : 'All epics';
   $('#minfo').innerHTML = `<a href="#" data-up="">${rootLabel}</a>` + trail.map(a => ` &rsaquo; <a href="#" data-up="${a.id}">#${a.id} ${esc(a.title.slice(0, 40))}</a>`).join('') +
     ` &middot; size = work items under each tile, colour = % done${hidden ? ` &middot; ${hidden} smallest tiles not drawn` : ''}`;
   const el = $('#mbody'), W = Math.max(600, el.clientWidth || 1000), H = Math.max(420, Math.min(720, window.innerHeight - 300));
-  const tileOf = it => { const r = roll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) ? 1 : 0)}; };
+  const tileOf = it => { const r = mroll(it); return {it, r, v: it.children.length ? r.total : (passNoEpic(it) && spPass(it) ? 1 : 0)}; };
   const tip = t => `<title>${esc(t.it.type)} #${t.it.id} ${esc(t.it.title)}\n${t.r.done}/${t.r.total} done (${t.r.pct}%)${t.it.assignee ? '\n' + esc(t.it.assignee) : ''}${t.it.children.length ? '\nClick to zoom in' : '\nDouble-click to open in Azure DevOps'}</title>`;
   // Two levels: big tiles show their children inside, under a header strip
   const draw = (t, depth) => {
@@ -1896,7 +1962,7 @@ function renderTreemap() {
   const rects = squarify(tiles, 0, 0, W, H);
   el.innerHTML = rects.length ? `<div class="card" style="padding:0;overflow:hidden"><svg id="tm" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;max-width:100%;height:auto">${rects.map(t => draw(t, 0)).join('')}</svg></div>
     <div class="legend"><span style="--c:${shade(0)}">0% done</span><span style="--c:${shade(50)}">50%</span><span style="--c:${shade(100)}">100% done</span><span class="sub">Tile border = work item type. Click to zoom in, double-click to open in Azure DevOps.</span></div>`
-    : '<p class="sub">Nothing to draw - this level has no work items that match the filters.</p>';
+    : `<p class="sub">Nothing to draw - this level has no work items that match the filters${mapsSprint >= 0 ? ' in this sprint' : ''}.</p>`;
 }
 $('#minfo').onclick = e => { const a = e.target.closest('a[data-up]'); if (!a) return; e.preventDefault(); tmRoot = a.dataset.up ? +a.dataset.up : null; renderMaps(); };
 $('#mbody').onclick = e => { const g = e.target.closest('#tm g[data-id]');
@@ -1911,7 +1977,7 @@ function renderRepoMatrix() {
   const rowOf = it => byEpic ? it.feature : it.epic;
   const repoName = new Map(D.graph.nodes.filter(n => n.kind === 'Repo').map(n => [n.id, n.label]));
   const m = new Map(), colTot = new Map(), rowTot = new Map();
-  D.graph.edges.forEach(e => { if (e.kind !== 'wi-repo') return; const it = byId.get(+e.from.slice(1)); if (!it || !pass(it)) return;
+  D.graph.edges.forEach(e => { if (e.kind !== 'wi-repo') return; const it = byId.get(+e.from.slice(1)); if (!it || !pass(it) || !spPass(it)) return;
     const k = rowOf(it) == null ? 'none' : rowOf(it); let r = m.get(k); if (!r) m.set(k, r = new Map());
     r.set(e.to, (r.get(e.to) || 0) + 1); colTot.set(e.to, (colTot.get(e.to) || 0) + 1); rowTot.set(k, (rowTot.get(k) || 0) + 1); });
   const cols = [...colTot.keys()].sort((a, b) => colTot.get(b) - colTot.get(a));
@@ -1920,7 +1986,7 @@ function renderRepoMatrix() {
   const max = Math.max(1, ...[...m.values()].flatMap(r => [...r.values()]));
   $('#minfo').innerHTML = `${byEpic ? 'Features of the selected epic' : 'Epics'} &times; repos &middot; number = work items linked to the repo by PRs, commits or branches` +
     (cols.length > 60 ? ` &middot; busiest 60 of ${cols.length} repos shown` : '');
-  if (!rows.length) { $('#mbody').innerHTML = '<p class="sub">No work items in view are linked to code (PRs, commits or branches).</p>'; return; }
+  if (!rows.length) { $('#mbody').innerHTML = `<p class="sub">No work items in view${mapsSprint >= 0 ? ' in this sprint' : ''} are linked to code (PRs, commits or branches).</p>`; return; }
   const label = k => { const it = byId.get(k); return it ? `${link(it)} ${esc(it.title)}` : `<span class="sub">${byEpic ? 'No feature' : 'Not under an epic'}</span>`; };
   $('#mbody').innerHTML = `<div class="card smap"><table><thead><tr><th>${byEpic ? 'Feature' : 'Epic'}</th><th>Total</th>${shownCols.map(c => `<th title="${esc(repoName.get(c) || c)}">${esc((repoName.get(c) || c).slice(0, 22))}</th>`).join('')}</tr></thead><tbody>${
     rows.map(k => { const r = m.get(k);
@@ -1929,65 +1995,224 @@ function renderRepoMatrix() {
     <p class="sub">Click a cell to open that ${byEpic ? 'feature' : 'epic'} in the spider web. Pick an epic in the filter bar to break it down by feature.</p>`;
 }
 
-// Commit heatmap: commits per day for the last 52 weeks, by repo and author (counts only, no code)
-let hmRepo = '', hmAuthor = '';
+// Commit heatmap: commits per day by repo and person (counts only, no code). Covers the last 52 weeks,
+// or the days of the sprint picked for the maps. Everyone in one grid, or one row per person.
+let hmRepo = '', hmAuthor = store.get('hmAuthor', ''), hmView = store.get('hmView', 'everyone');
+
+// One person often commits under more than one name or email, e.g. "First Last" and First.Last.CTR.
+// Names and the part of the email before the @ are normalised (case, dots, contractor markers,
+// "Last, First") and any that match are joined into one person, shown under their most-used full name.
+function authorIndex(weight) {
+  const MARK = /\b(ctr|contractor|cntr|ext|external|vendor)\b/g;
+  const norm = s => String(s).toLowerCase().replace(/[._\-+()\[\]]+/g, ' ').replace(MARK, ' ').replace(/\s+/g, ' ').trim();
+  const parse = raw => { const m = /^(.*?)\s*<([^<>]*)>\s*$/.exec(raw); return m ? [m[1].trim(), m[2].trim()] : [raw.trim(), ''];
+  };
+  const nameKey = n => { n = n.replace(/@.*$/, ''); const c = /^([^,]+),\s*(.+)$/.exec(n); return norm(c ? c[2] + ' ' + c[1] : n); };
+  const mailKey = e => e ? norm(e.split('@')[0]) : '';
+  const title = s => s.replace(/\b\w/g, c => c.toUpperCase());
+  const up = new Map();
+  const find = k => { while (up.get(k) !== k) k = up.get(k); return k; };
+  const join = (a, b) => { if (!up.has(a)) up.set(a, a); if (!up.has(b)) up.set(b, b); const x = find(a), y = find(b); if (x !== y) up.set(x, y); };
+  const info = [...weight.keys()].map(raw => {
+    const [n, e] = parse(raw), keys = [nameKey(n), mailKey(e)].filter(Boolean);
+    if (!keys.length) keys.push(raw);
+    keys.forEach(k => join(keys[0], k));
+    // Display: a real "First Last" name as typed (contractor marker dropped), else built from the key
+    const shown = /\s/.test(n.trim()) && !/@/.test(n) ? n.replace(/[\s,]*\(?\b(ctr|contractor|cntr)\b\)?\.?/gi, '').trim() : '';
+    return {raw, keys, shown};
+  });
+  const best = new Map();
+  info.forEach(x => { if (!x.shown) return; const g = find(x.keys[0]), w = weight.get(x.raw) || 0;
+    if (!best.has(g) || w > best.get(g).w) best.set(g, {name: x.shown, w}); });
+  const out = new Map();
+  info.forEach(x => { const g = find(x.keys[0]); out.set(x.raw, best.has(g) ? best.get(g).name : title(g)); });
+  return out;
+}
+
 function renderHeatmap() {
   const CM = D.commits || {rows: []}, rows = CM.rows || [];
   const repoName = new Map(D.graph.nodes.filter(n => n.kind === 'Repo').map(n => [n.id.slice(1), n.label]));
   const rname = id => repoName.get(id) || ('repo ' + String(id).slice(0, 8));
   if (!rows.length) {
     $('#minfo').textContent = '';
-    $('#mbody').innerHTML = `<p class="sub">No commit data yet. Each run reads commit dates and authors (never code) for the last ${CM.days || 365} days; set -CommitDays 0 to turn this off.</p>`;
+    $('#mbody').innerHTML = `<p class="sub">No commit data yet. Each pull reads commit dates and authors (never code) for the last ${CM.days || 365} days; set -CommitDays 0 to turn this off.</p>`;
     return;
   }
+  const weight = new Map();
+  rows.forEach(r => weight.set(r[2], (weight.get(r[2]) || 0) + Number(r[3])));
+  const who = authorIndex(weight);
+  const people = uniq([...who.values()]);
   const repos = uniq(rows.map(r => r[1])).sort((a, b) => rname(a).localeCompare(rname(b)));
-  const authors = uniq(rows.map(r => r[2]));
   if (hmRepo && !repos.includes(hmRepo)) hmRepo = '';
-  if (hmAuthor && !authors.includes(hmAuthor)) hmAuthor = '';
-  const sel = rows.filter(r => (!hmRepo || r[1] === hmRepo) && (!hmAuthor || r[2] === hmAuthor));
-  const byDay = new Map(), byRepo = new Map(), byWho = new Map(), lastDay = new Map();
-  sel.forEach(([d, r, a, n]) => { byDay.set(d, (byDay.get(d) || 0) + n); byRepo.set(r, (byRepo.get(r) || 0) + n); byWho.set(a, (byWho.get(a) || 0) + n);
-    if (!lastDay.has(r) || lastDay.get(r) < d) lastDay.set(r, d); });
-  // Grid: 53 week columns ending this week, Sunday at the top
+  if (hmAuthor && !people.includes(hmAuthor)) hmAuthor = '';
+
+  // Range: the picked sprint's days, or the last 52 weeks ending this week
   const day = 864e5, today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const start = new Date(today.getTime() - (52 * 7 + today.getUTCDay()) * day);
-  const max = Math.max(1, ...byDay.values());
-  const level = n => !n ? 0 : n <= max * .25 ? 1 : n <= max * .5 ? 2 : n <= max * .75 ? 3 : 4;
+  const iso = d => d.toISOString().slice(0, 10), at = k => new Date(k + 'T00:00:00Z');
+  const sp = SPR[mapsSprint], spDays = !!(sp && sp.start && sp.finish);
+  const from = spDays ? at(String(sp.start).slice(0, 10)) : new Date(today.getTime() - (52 * 7 + today.getUTCDay()) * day);
+  const to = spDays ? at(String(sp.finish).slice(0, 10)) : today;
+  const fromK = iso(from), toK = iso(to);
+  const sel = rows.filter(r => r[0] >= fromK && r[0] <= toK && (!hmRepo || r[1] === hmRepo) && (!hmAuthor || who.get(r[2]) === hmAuthor));
+
+  const byDay = new Map(), byRepo = new Map(), byWho = new Map(), byWhoDay = new Map();
+  sel.forEach(([d, r, a, n]) => { n = Number(n); const p = who.get(a);
+    byDay.set(d, (byDay.get(d) || 0) + n); byRepo.set(r, (byRepo.get(r) || 0) + n); byWho.set(p, (byWho.get(p) || 0) + n);
+    byWhoDay.set(p + '|' + d, (byWhoDay.get(p + '|' + d) || 0) + n); });
+  let total = 0, active = 0, best = ['', 0];
+  byDay.forEach((n, d) => { total += n; active++; if (n > best[1]) best = [d, n]; });
+
   const fill = l => l ? `color-mix(in srgb, var(--done) ${[0, 30, 55, 78, 100][l]}%, var(--panel))` : 'var(--line)';
-  const cs = 13, gap = 3, L = 30, T = 20, weeks = 53, W = L + weeks * (cs + gap), H = T + 7 * (cs + gap);
-  let cells = '', months = '', lastMonth = -1, total = 0, active = 0, best = ['', 0];
-  for (let w = 0; w < weeks; w++) for (let k = 0; k < 7; k++) {
-    const dt = new Date(start.getTime() + (w * 7 + k) * day); if (dt > today) continue;
-    const key = dt.toISOString().slice(0, 10), n = byDay.get(key) || 0;
-    if (n) { total += n; active++; if (n > best[1]) best = [key, n]; }
-    if (k === 0 && dt.getUTCMonth() !== lastMonth) { lastMonth = dt.getUTCMonth();
-      months += `<text x="${L + w * (cs + gap)}" y="12">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</text>`; }
-    cells += `<rect x="${L + w * (cs + gap)}" y="${T + k * (cs + gap)}" width="${cs}" height="${cs}" rx="2" style="fill:${fill(level(n))}"><title>${n} commit${n === 1 ? '' : 's'} on ${fmtDate(key + 'T00:00:00Z')} ${key.slice(0, 4)}</title></rect>`;
+  const levelOf = max => n => !n ? 0 : n <= max * .25 ? 1 : n <= max * .5 ? 2 : n <= max * .75 ? 3 : 4;
+  const fmtLong = k => at(k).toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
+  const cell = (x, y, s, n, lvl, f, t, p, extra) =>
+    `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${s > 16 ? 4 : 2}" style="fill:${fill(lvl)}" data-f="${f}" data-t="${t}" data-p="${esc(p || '')}"${extra || ''}></rect>`;
+  const byPerson = hmView === 'person';
+  const shownPeople = byPerson ? [...byWho.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]).slice(0, spDays ? 40 : 15) : [];
+  const nameCol = byPerson ? 150 : 0, short = s => s.length > 22 ? s.slice(0, 21) + '\u2026' : s;
+  let svg = '', W = 0, H = 0;
+
+  if (spDays) {
+    // Sprint: one big cell per day, weekends shaded; one row for everyone, or one per person
+    const n = Math.round((to - from) / day) + 1, cs = 26, gap = 4, L = byPerson ? nameCol : 70, T = 36;
+    const lines = byPerson ? shownPeople : [''];
+    const max = Math.max(1, ...(byPerson ? lines.flatMap(p => [...Array(n)].map((_, i) => byWhoDay.get(p + '|' + iso(new Date(from.getTime() + i * day))) || 0)) : [...byDay.values()]));
+    const lvl = levelOf(max);
+    W = L + n * (cs + gap); H = T + Math.max(1, lines.length) * (cs + gap);
+    for (let i = 0; i < n; i++) {
+      const dt = new Date(from.getTime() + i * day), k = iso(dt), x = L + i * (cs + gap), wkend = dt.getUTCDay() === 0 || dt.getUTCDay() === 6;
+      if (wkend) svg += `<rect class="wkend" x="${x - 2}" y="${T - 34}" width="${cs + 4}" height="${H - T + 34}" rx="4"></rect>`;
+      svg += `<text class="wk" x="${x + cs / 2}" y="${T - 22}" text-anchor="middle">${dt.toLocaleDateString(undefined, {weekday: 'narrow', timeZone: 'UTC'})}</text>` +
+             `<text x="${x + cs / 2}" y="${T - 8}" text-anchor="middle"${k === iso(today) ? ' class="hl"' : ''}>${dt.getUTCDate()}</text>`;
+      lines.forEach((p, r) => {
+        const v = p ? byWhoDay.get(p + '|' + k) || 0 : byDay.get(k) || 0, future = dt > today;
+        svg += cell(x, T + r * (cs + gap), cs, v, lvl(v), k, k, p, future ? ' stroke="var(--muted)" stroke-dasharray="3 3" fill-opacity=".4"' : '');
+      });
+    }
+    lines.forEach((p, r) => { svg += `<text class="hl" x="0" y="${T + r * (cs + gap) + cs / 2 + 4}">${esc(p ? short(p) : 'Everyone')}</text>`; });
   }
-  const wd = [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text x="0" y="${T + k * (cs + gap) + 10}">${t}</text>`).join('');
+  else if (byPerson) {
+    // Last 52 weeks, one day-by-day calendar per person (same scale for everyone, so they compare)
+    const cs = 11, gap = 3, L = 30, weeks = 53, block = 7 * (cs + gap) + 40;
+    const lvl = levelOf(Math.max(1, ...byWhoDay.values()));
+    W = L + weeks * (cs + gap); H = Math.max(1, shownPeople.length) * block;
+    shownPeople.forEach((p, r) => {
+      const T = r * block + 38;
+      svg += `<text class="hl" x="0" y="${T - 22}">${esc(p)} &middot; ${(byWho.get(p) || 0).toLocaleString()} commits</text>`;
+      for (let w = 0; w < weeks; w++) for (let k = 0; k < 7; k++) {
+        const dt = new Date(from.getTime() + (w * 7 + k) * day); if (dt > today) continue;
+        const key = iso(dt), n = byWhoDay.get(p + '|' + key) || 0;
+        if (k === 0 && dt.getUTCDate() <= 7) svg += `<text class="wk" x="${L + w * (cs + gap)}" y="${T - 5}">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</text>`;
+        svg += cell(L + w * (cs + gap), T + k * (cs + gap), cs, n, lvl(n), key, key, p);
+      }
+      svg += [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text class="wk" x="0" y="${T + k * (cs + gap) + 9}">${t}</text>`).join('');
+    });
+  }
+  else {
+    // Last 52 weeks for everyone: 53 week columns ending this week, Sunday at the top
+    const cs = 13, gap = 3, L = 30, T = 20, weeks = 53, lvl = levelOf(Math.max(1, ...byDay.values()));
+    W = L + weeks * (cs + gap); H = T + 7 * (cs + gap);
+    let lastMonth = -1;
+    for (let w = 0; w < weeks; w++) for (let k = 0; k < 7; k++) {
+      const dt = new Date(from.getTime() + (w * 7 + k) * day); if (dt > today) continue;
+      const key = iso(dt), n = byDay.get(key) || 0;
+      if (k === 0 && dt.getUTCMonth() !== lastMonth) { lastMonth = dt.getUTCMonth();
+        svg += `<text x="${L + w * (cs + gap)}" y="12">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</text>`; }
+      svg += cell(L + w * (cs + gap), T + k * (cs + gap), cs, n, lvl(n), key, key, '');
+    }
+    svg += [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text x="0" y="${T + k * (cs + gap) + 10}">${t}</text>`).join('');
+  }
+
   const legend = [0, 1, 2, 3, 4].map(l => `<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${fill(l)};vertical-align:-1px"></span>`).join(' ');
-  const top = (m, label) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) =>
-    `<tr><td class="t" style="max-width:240px">${esc(label(k))}</td><td class="n">${v.toLocaleString()}</td><td style="width:40%"><div class="bar"><i class="b-done" style="width:${100 * v / Math.max(...m.values())}%"></i></div></td></tr>`).join('');
-  $('#minfo').innerHTML = `Commits per day, last 52 weeks &middot; counts only (dates and authors), no code`;
+  const top = (m, label, attr) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) =>
+    `<tr${attr ? ` data-who="${esc(k)}"${k === hmAuthor ? ' class="on"' : ''} title="Show only ${esc(k)}"` : ''}><td class="t" style="max-width:240px">${esc(label(k))}</td><td class="n">${v.toLocaleString()}</td><td style="width:40%"><div class="bar"><i class="b-done" style="width:${100 * v / Math.max(...m.values())}%"></i></div></td></tr>`).join('');
+  const range = spDays ? `${fmtDate(sp.start)} &ndash; ${fmtDate(sp.finish)}` : 'last 52 weeks';
+  const older = spDays && fromK < iso(new Date(today.getTime() - (CM.days || 365) * day));
+  $('#minfo').innerHTML = `Commits per day, ${range}${byPerson ? ', by person' : ''} &middot; counts only (dates and authors), no code` +
+    (sp && !spDays ? ` &middot; ${esc(sp.name)} has no dates, so the last 52 weeks are shown` : '') +
+    (older ? ` &middot; commit data only goes back ${CM.days || 365} days` : '');
   $('#mbody').innerHTML = `
     <div class="toolbar">
+      <div class="seg" id="hmView"><button data-v="everyone">Everyone</button><button data-v="person">By person</button></div>
       <select id="hmRepo">${opt('', 'All repos (' + repos.length + ')')}${repos.map(r => opt(r, rname(r), r === hmRepo)).join('')}</select>
-      <select id="hmAuthor">${opt('', 'Everyone (' + authors.length + ')')}${authors.map(a => opt(a, a, a === hmAuthor)).join('')}</select>
+      <select id="hmAuthor"${hmAuthor ? ' class="on"' : ''}>${opt('', 'Everyone (' + people.length + ' people)')}${people.map(a => opt(a, a, a === hmAuthor)).join('')}</select>
+      ${byPerson && byWho.size > shownPeople.length ? `<span class="sub">${shownPeople.length} busiest of ${byWho.size} people shown</span>` : ''}
     </div>
     <div class="kpis">
       <div class="kpi"><span class="sub">Commits</span><b>${total.toLocaleString()}</b></div>
       <div class="kpi"><span class="sub">Active days</span><b>${active}</b></div>
-      <div class="kpi"><span class="sub">Busiest day</span><b>${best[1] || 0}</b><span class="sub">${best[0] ? fmtDate(best[0] + 'T00:00:00Z') + ' ' + best[0].slice(0, 4) : ''}</span></div>
+      <div class="kpi"><span class="sub">Busiest day</span><b>${best[1] || 0}</b><span class="sub">${best[0] ? fmtLong(best[0]) : ''}</span></div>
       <div class="kpi"><span class="sub">Per active day</span><b>${active ? (total / active).toFixed(1) : 0}</b></div>
+      <div class="kpi"><span class="sub">People</span><b>${byWho.size}</b></div>
     </div>
-    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W * 1.25}px;min-width:${W}px">${months}${wd}${cells}</svg>
-      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More</div></div>
+    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
+      `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${spDays ? W * 1.6 : W * 1.25}px;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
+      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
+      <div class="gtip" id="hmtip" hidden></div></div>
     <div class="two" style="margin-top:12px">
       <div class="card"><h3>Top repos</h3><table><tbody>${top(byRepo, rname)}</tbody></table></div>
-      <div class="card"><h3>Top authors</h3><table><tbody>${top(byWho, a => a)}</tbody></table></div>
+      <div class="card"><h3>Top people</h3><table><tbody>${top(byWho, a => a, true)}</tbody></table><div class="sub" style="margin-top:6px">Click a person to show only them. Names and email accounts that belong to one person (e.g. First.Last.CTR) are counted together.</div></div>
     </div>`;
+  segSet('#hmView', 'v', hmView);
+  $$('#hmView button').forEach(b => b.onclick = () => { hmView = b.dataset.v; store.set('hmView', hmView); renderHeatmap(); });
   $('#hmRepo').onchange = e => { hmRepo = e.target.value; renderHeatmap(); };
-  $('#hmAuthor').onchange = e => { hmAuthor = e.target.value; renderHeatmap(); };
+  $('#hmAuthor').onchange = e => { hmAuthor = e.target.value; store.set('hmAuthor', hmAuthor); renderHeatmap(); };
+  $$('#mbody tr[data-who]').forEach(tr => tr.onclick = () => { hmAuthor = hmAuthor === tr.dataset.who ? '' : tr.dataset.who; store.set('hmAuthor', hmAuthor); renderHeatmap(); });
+
+  // Hover a square: the day, its commits, and who and which repos they came from.
+  // Click it to pin the details, with links to those commits in Azure DevOps (the repo's Commits
+  // page filtered to that day, and to the person for a person's square).
+  const hm = $('#hm'), tip = $('#hmtip');
+  const repoUrl = new Map(D.graph.nodes.filter(n => n.kind === 'Repo').map(n => [n.id.slice(1), n.url]));
+  const plainName = raw => raw.replace(/\s*<[^<>]*>\s*$/, '');
+  const commitsLink = (repo, f, t, rs) => {
+    const u = repoUrl.get(repo); if (!u) return '';
+    const q = [`fromDate=${f}`, `toDate=${t}`];
+    if (rs) {   // the name this person used most in that repo that day
+      const names = new Map(); rs.forEach(x => { if (x[1] === repo) names.set(x[2], (names.get(x[2]) || 0) + Number(x[3])); });
+      const top = [...names.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (top) q.push('user=' + encodeURIComponent(plainName(top[0])));
+    }
+    return `${u}/commits?${q.join('&')}`;
+  };
+  let pinned = false;
+  const show = (e, r, pin) => {
+    const f = r.dataset.f, t = r.dataset.t, p = r.dataset.p;
+    const rs = sel.filter(x => x[0] >= f && x[0] <= t && (!p || who.get(x[2]) === p));
+    const sum = m => [...m.entries()].sort((a, b) => b[1] - a[1]);
+    const pm = new Map(), rm = new Map(); let n = 0;
+    rs.forEach(([, rp, a, c]) => { c = Number(c); n += c; pm.set(who.get(a), (pm.get(who.get(a)) || 0) + c); rm.set(rp, (rm.get(rp) || 0) + c); });
+    const list = (m, label) => { const e2 = sum(m); return e2.slice(0, 5).map(([k, v]) => `${esc(label(k))} ${v}`).join(', ') + (e2.length > 5 ? `, +${e2.length - 5} more` : ''); };
+    let html = `<b>${fmtLong(f)}</b>${p ? '\n' + esc(p) : ''}\n${n ? `<b>${n.toLocaleString()}</b> commit${n === 1 ? '' : 's'}` : at(f) > today ? 'Still to come' : 'No commits'}` +
+      (n && !p ? '\nPeople: ' + list(pm, a => a) : '');
+    if (n && pin) {
+      html = `<button class="x" title="Close">&times;</button>` + html + '\nOpen in Azure DevOps:' + sum(rm).map(([rp, v]) => {
+        const u = commitsLink(rp, f, t, p ? rs : null);
+        return u ? `\n<a href="${esc(u)}" target="_blank" rel="noopener">${esc(rname(rp))} &middot; ${v} commit${v === 1 ? '' : 's'} &#8599;</a>` : `\n${esc(rname(rp))} ${v}`;
+      }).join('');
+    }
+    else if (n) html += '\nRepos: ' + list(rm, rname) + '\n<span class="sub">Click to open these commits in Azure DevOps</span>';
+    tip.innerHTML = html;
+    tip.classList.toggle('pin', !!pin);
+    tip.hidden = false;
+    const box = hm.getBoundingClientRect();
+    let x = e.clientX - box.left + hm.scrollLeft + 14, y = e.clientY - box.top + 14;
+    if (x + tip.offsetWidth > hm.scrollLeft + box.width - 4) x = e.clientX - box.left + hm.scrollLeft - tip.offsetWidth - 10;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  };
+  hm.onmousemove = e => {
+    if (pinned) return;
+    const r = e.target.closest('rect[data-f]');
+    if (r) show(e, r, false); else tip.hidden = true;
+  };
+  hm.onclick = e => {
+    if (e.target.closest('#hmtip .x')) { pinned = false; tip.hidden = true; return; }
+    if (e.target.closest('#hmtip')) return;   // a link in the pinned details
+    const r = e.target.closest('rect[data-f]');
+    if (!r) { pinned = false; tip.hidden = true; return; }
+    pinned = true; show(e, r, true);
+  };
+  hm.onmouseleave = () => { if (!pinned) tip.hidden = true; };
 }
 
 function renderAll() {

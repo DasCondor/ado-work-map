@@ -77,7 +77,7 @@ What changed in any time frame: the latest pull, the last 7 / 14 / 30 / 90 days,
 
 ### Maps
 
-Other ways to see the same data when a graph gets too busy.
+Other ways to see the same data when a graph gets too busy. Pick a sprint above the maps (or **Current sprint**) and every map narrows to it, with a banner showing which sprint, its dates and Previous / Next buttons.
 
 <table>
 <tr>
@@ -88,7 +88,7 @@ Other ways to see the same data when a graph gets too busy.
 
 <img src="docs/images/commit-heatmap.png" alt="Commit heatmap: a year of commits per day, with top repos and top authors" width="900">
 
-**Commit heatmap** &mdash; commits per day for the last year, filterable by repo and author, with the busiest repos and authors. Only commit dates and author names are read.
+**Commit heatmap** &mdash; commits per day for the last year, or day by day for one sprint. View **Everyone** in one grid or **By person** with a row each, filter by repo or person, and hover any square for the date, count, people and repos. One person's commits under different names or accounts (e.g. `First Last` and `First.Last.CTR`) are counted together. Only commit dates, author names and the part of the email before the @ are read.
 
 ### Spider web
 
@@ -189,7 +189,7 @@ flowchart LR
 |---|---|---|
 | Work items | One id query, then details 200 per call | One "changed since" query, details only for what changed |
 | Pull requests | Project PR list, 1,000 per call (metadata only) | Active PRs plus those closed since the last run |
-| Commits (heatmap) | Dates and authors for the last `-CommitDays` days | Only the last two days are re-read |
+| Commits (heatmap) | Dates, author names and the part of the email before the @, for the last `-CommitDays` days | Only the last two days are re-read |
 | Sprints, repos, state names | One call each | One call each |
 
 With 5,400 work items and 5,000 PRs on a local test server, a first run took about 40 calls and a typical later run about 13, plus a few calls per repository for the commit heatmap.
@@ -279,7 +279,7 @@ Everything is written to `ado_report\` next to the script.
 ## Security and privacy
 
 - **Read-only.** The script only reads from Azure DevOps; it never creates, edits or deletes anything there.
-- **No code.** It reads work items, PR metadata (title, status, branches, author) and commit dates and authors. It never downloads file contents or diffs, and it doesn't save commit messages or PR descriptions.
+- **No code.** It reads work items, PR metadata (title, status, branches, author) and commit dates and authors (name and the part of the email before the @, used only to join one person's accounts). It never downloads file contents or diffs, and it doesn't save commit messages or PR descriptions.
 - **Your token stays local.** The starter passes it through the environment, not the command line, so it doesn't show in the process list. It's never written to the config file, the cache or the report.
 - **The output is your data.** The report and cache contain real work item titles and names. Keep `ado_report\` wherever your organization says that kind of data belongs.
 

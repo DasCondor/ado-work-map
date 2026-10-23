@@ -11,7 +11,7 @@ It's the same interactive report as the free [ADO Work Map PowerShell script](ht
 - **Delivery map** - Epic > Feature > Story > Task with accomplished / in progress / not started roll-ups, an epic list for big projects, collapse to any level, and progress over time.
 - **Sprints** - every sprint on a timeline, the detail of any sprint, velocity, and a features x sprints map.
 - **Changes** - what was created, completed, updated or moved in any time frame, plus a change log recorded between your visits.
-- **Maps** - a treemap of epics and features by % done, a repo matrix, and a commit heatmap per day, repo and author.
+- **Maps** - a treemap of epics and features by % done, a repo matrix, and a commit heatmap for everyone or by person, with details on hover. Narrow every map to one sprint.
 - **Spider web** - work items and their links (parent/child, related, dependencies) plus the PRs, commits, branches, builds and repos attached to them. Starts on the current sprint; overview and focus modes keep big projects responsive.
 
 Filters (search, epic, person, area, tag), light / dark theme, and links straight to every work item.

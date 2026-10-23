@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Every map (treemap, repo matrix, commit heatmap) can be narrowed to one sprint, with a banner showing the sprint, its dates and Previous / Next buttons, plus a Current sprint shortcut
+- Commit heatmap: Everyone or By person (a row per person), day-by-day squares for a sprint, a tooltip on every square (date, commits, people, repos), click a square to pin it with links to those commits in Azure DevOps, and click a person to show only them. Over all sprints, By person gives each person their own day-by-day calendar
+- One person's commits under different names or accounts (e.g. First Last and First.Last.CTR) are counted as one person. Commit rows now keep the part of the email before the @ for this; run a Full refresh to add it to older days
+
 ## 1.0.1
 
 - Spider web takes label text into account: the layout keeps node and label boxes apart, overlapping labels are skipped (biggest items first), and labels stay at a readable size when a graph is zoomed out to fit a narrow panel
