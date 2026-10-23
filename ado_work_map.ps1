@@ -2457,11 +2457,13 @@ function MiniGraph(host, NS, ES, fg) {
     ids.forEach(id => {   // new nodes start next to a neighbour that's already placed, else somewhere in a disc
       if (P.has(id)) return;
       const n = (nb.get(id) || []).find(x => P.has(x)), a = Math.random() * 6.2832, r = n ? 25 + Math.random() * 35 : R * Math.sqrt(Math.random());
-      const o = n ? P.get(n) : {x: 0, y: 0}; P.set(id, {x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r});
+      const o = n ? P.get(n) : {x: 0, y: 0}, q = n ? 1 : aspect(); P.set(id, {x: o.x + Math.cos(a) * r * q, y: o.y + Math.sin(a) * r / q});
     });
     if (!ids.includes(sel)) sel = null;
     fit(); paint();
   }
+  // Spread the layout to the canvas shape (a wide canvas gets a wide graph) instead of a circle in the middle
+  const aspect = () => W && H ? Math.min(2.5, Math.max(.6, W / H)) : 1;
   function fit() {
     if (!ids.length || !W) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -2477,7 +2479,7 @@ function MiniGraph(host, NS, ES, fg) {
     const X = new Float64Array(n), Y = new Float64Array(n), VX = new Float64Array(n), VY = new Float64Array(n), M = new Float64Array(n);
     ids.forEach((id, i) => { const p = P.get(id); X[i] = p.x; Y[i] = p.y; M[i] = NS.get(id).mass || 1; });
     const E = []; eids.forEach(e => { const s = ES.get(e), a = idx.get(s.from), b = idx.get(s.to); if (a != null && b != null) E.push(a, b); });
-    const rest = 95, kSpring = .035, kRep = 3600, cell = 170, grav = .005, damp = .8;
+    const rest = 95, kSpring = .035, kRep = 3600, cell = 170, grav = .005, damp = .8, gX = grav / aspect(), gY = grav * aspect();
     const BW = new Float64Array(n), BH = new Float64Array(n), BO = new Float64Array(n);
     ids.forEach((id, i) => { const b = box(id); BW[i] = b.w; BH[i] = b.h; BO[i] = b.oy; });
     let cc = cell; for (let i = 0; i < n; i++) cc = Math.max(cc, BW[i], BH[i]); cc = Math.min(cc, 420);
@@ -2509,7 +2511,7 @@ function MiniGraph(host, NS, ES, fg) {
         const maxV = 35 * cool;
         for (let i = 0; i < n; i++) {
           if (drag && drag.kind === 'node' && drag.id === ids[i]) { const p = P.get(ids[i]); X[i] = p.x; Y[i] = p.y; VX[i] = VY[i] = 0; continue; }
-          VX[i] = (VX[i] + (FX[i] - X[i] * grav) / M[i]) * damp; VY[i] = (VY[i] + (FY[i] - Y[i] * grav) / M[i]) * damp;
+          VX[i] = (VX[i] + (FX[i] - X[i] * gX) / M[i]) * damp; VY[i] = (VY[i] + (FY[i] - Y[i] * gY) / M[i]) * damp;
           const v = Math.hypot(VX[i], VY[i]); if (v > maxV) { VX[i] *= maxV / v; VY[i] *= maxV / v; }
           X[i] += VX[i]; Y[i] += VY[i];
         }
@@ -2539,11 +2541,20 @@ function MiniGraph(host, NS, ES, fg) {
       paint();
       if (onProgress) onProgress(it, iters);
       if (it < iters && running) raf = setTimeout(step, 0);
-      else { running = false; const q = doneQueue.splice(0); q.forEach(f => f()); }
+      else { running = false; if (!userMoved) { widen(); fit(); paint(); } const q = doneQueue.splice(0); q.forEach(f => f()); }
     };
     raf = setTimeout(step, 0);
   }
   function stop() { clearTimeout(raf); running = false; }
+  // Small graphs keep a round shape whatever the canvas: stretch them sideways (up to 1.8x) to use a wide canvas
+  function widen() {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    ids.forEach(id => { const p = P.get(id); x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
+    const w = x1 - x0, h = y1 - y0, want = W && H ? W / H : 1;
+    if (!(w > 0 && h > 0) || w / h >= want) return;
+    const f = Math.min(1.8, want * h / w), cx = (x0 + x1) / 2;
+    ids.forEach(id => { const p = P.get(id); p.x = cx + (p.x - cx) * f; });
+  }
 
   // ---- interaction ----
   const toWorld = (sx, sy) => ({x: (sx - view.x) / view.k, y: (sy - view.y) / view.k});

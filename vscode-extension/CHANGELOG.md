@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.4
+
+- Spider web: the layout spreads to the shape of the canvas, so wide screens get a wide graph; small graphs are widened when the layout finishes
+
 ## 1.4.3
 
 - Sprint detail: By person beside the sprint strip and totals
