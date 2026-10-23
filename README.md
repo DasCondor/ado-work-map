@@ -36,6 +36,8 @@ in an interactive page you can open in any browser.
 - **Tooltips on every square.** Hover for the date, the number of commits, and the people and repos involved. **Click** a square to pin it, with links to those commits in Azure DevOps.
 - **One person, one row.** Commits under different names or accounts, such as `First Last` and `First.Last.CTR`, are counted as one person. Commit data now keeps the part of the email before the @ (never the full address) for this. Run a full refresh to add it to days pulled before this update.
 
+<img src="docs/images/commit-heatmap-sprint.png" alt="Commit heatmap narrowed to the current sprint: a banner with the sprint and its dates, one row per person with a square per day, and a pinned tooltip linking to the commits in Azure DevOps" width="900">
+
 Downloads: [release 1.1.0](https://github.com/DasCondor/ado-work-map/releases/tag/v1.1.0) (VS Code and Azure DevOps extensions). Full history: [releases](https://github.com/DasCondor/ado-work-map/releases) and the [VS Code extension changelog](vscode-extension/CHANGELOG.md).
 
 ## Why
@@ -100,9 +102,16 @@ Other ways to see the same data when a graph gets too busy. Pick a sprint above 
 </tr>
 </table>
 
-<img src="docs/images/commit-heatmap.png" alt="Commit heatmap: a year of commits per day, with top repos and top authors" width="900">
+<img src="docs/images/commit-heatmap.png" alt="Commit heatmap for everyone: a year of commits per day with a pinned tooltip listing the people and repos, plus top repos and top people" width="900">
 
-**Commit heatmap** &mdash; commits per day for the last year, or day by day for one sprint. View **Everyone** in one grid or **By person** with a row each, filter by repo or person, and hover any square for the date, count, people and repos. One person's commits under different names or accounts (e.g. `First Last` and `First.Last.CTR`) are counted together. Only commit dates, author names and the part of the email before the @ are read.
+<table>
+<tr>
+<td width="50%"><img src="docs/images/commit-heatmap-person.png" alt="Commit heatmap by person: a day-by-day calendar for each person"><br><b>By person</b> &mdash; each person's own day-by-day calendar for the year, on one shared scale.</td>
+<td width="50%"><img src="docs/images/commit-heatmap-sprint.png" alt="Commit heatmap for one sprint: a row per person and a square per day"><br><b>One sprint</b> &mdash; a square per day for each person, weekends shaded, days still to come dashed.</td>
+</tr>
+</table>
+
+**Commit heatmap** &mdash; commits per day for the last year, or day by day for one sprint. View **Everyone** in one grid or **By person** with a row each, filter by repo or person, and hover any square for the date, count, people and repos. Click a square to pin it, with links to those commits in Azure DevOps. One person's commits under different names or accounts (e.g. `First Last` and `First.Last.CTR`) are counted together. Only commit dates, author names and the part of the email before the @ are read.
 
 ### Spider web
 
