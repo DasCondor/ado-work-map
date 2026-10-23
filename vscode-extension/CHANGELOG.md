@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0
+## 1.4.1
 
 - Filter bar: people and tags are multiple choice, a persistent Exclude tags list, a saved default area path, every list narrowed by the other filters (pick an area path and the Epic list shrinks to it), and a search box on lists over 5
 - Sprints: the sprint strip stays in view while scrolling; the sprint map has epic and feature links and a hover list of each cell's stories with links

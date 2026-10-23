@@ -27,13 +27,13 @@ in an interactive page you can open in any browser.
 
 ## Latest updates
 
-### 1.2.0 &mdash; Filters that narrow each other, Technical Stories, sprint map links
+### 1.4.1 &mdash; Filters that narrow each other, Technical Stories, sprint map links
 
 - **Filter bar:** people and tags are multiple choice, there's a persistent **Exclude tags** list (it survives Clear filters), and the area path can be saved as your default (**Open with this area path** inside the Area list). Every list only offers what the other filters leave: pick an area path and the Epic list shrinks to that area's epics. Lists longer than 5 get a search box.
 - **Sprints:** the sprint strip stays put while you scroll a sprint's work. In the sprint map, epics and features are links, and hovering a cell lists its stories, technical stories and bugs with a link to each.
 - **Technical Story** is a story type everywhere (delivery map, sprints, changes, maps) and its own kind in the spider web. If you pass your own `-Types`, add it there.
 - The report uses the full window width, and the demo runs on 4-week sprints (Sprint 15 is Oct 26 &ndash; Nov 20), matching the Azure DevOps extension's demo.
-- VS Code extension 1.2.0 bundles this script. The Azure DevOps extension with the same changes (and the new Sprint planning hub) is released from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension) as 1.3.0.
+- VS Code extension 1.4.1 bundles this script. The Azure DevOps extension with the same changes (and the new Sprint planning hub) is released from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension) as 1.4.1 too.
 
 ### Preview &mdash; sprint planning live demo
 
