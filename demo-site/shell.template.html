@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="Live demo of ADO Work Map: epics to tasks, every sprint, what changed, repos, a commit heatmap and a spider web of links - shown as an Azure DevOps extension. Sample data, runs only in your browser.">
+<title>ADO Work Map live demo</title>
+<script>
+(function () { let t = 'auto'; try { t = JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); } catch (e) {}
+  if (t !== 'auto') document.documentElement.dataset.theme = t; })();
+</script>
+<style>
+:root{--bg:#f8f8f8;--panel:#fff;--text:#201f1e;--muted:#605e5c;--line:#e1dfdd;--hover:#f3f2f1;--sel:#deecf9;--accent:#0078d4}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1b1a19;--panel:#252423;--text:#f3f2f1;--muted:#c8c6c4;--line:#3b3a39;--hover:#323130;--sel:#0f3a5e;--accent:#479ef5;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#1b1a19;--panel:#252423;--text:#f3f2f1;--muted:#c8c6c4;--line:#3b3a39;--hover:#323130;--sel:#0f3a5e;--accent:#479ef5;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+.grow{flex:1}
+.sub{color:var(--muted);font-size:12px}
+.shell{display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto 48px minmax(0,1fr);height:100vh;transition:grid-template-columns .15s}
+.notice{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;padding:6px 14px;font-size:12.5px;background:color-mix(in srgb,var(--accent) 14%,var(--panel));border-bottom:1px solid var(--line)}
+.notice b{color:var(--accent)} .notice a{font-weight:600} .notice .sep{color:var(--muted)}
+.adoh{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:13px}
+.adoh .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.adoh .logo{width:20px;height:20px;border-radius:4px;background:linear-gradient(135deg,#0078d4,#4f9fe0)}
+.adoh .crumbs{color:var(--muted)} .adoh .crumbs b{color:var(--text);font-weight:400}
+.adoh .search{border:1px solid var(--line);border-radius:4px;padding:4px 10px;color:var(--muted);min-width:220px;background:var(--bg)}
+.adoh .hicon{width:30px;height:30px;display:grid;place-items:center;border-radius:4px;color:var(--muted);background:none;border:0;font:inherit;cursor:pointer}
+.adoh .hicon:hover{background:var(--hover)}
+.demo{font-size:11px;font-weight:600;padding:1px 8px;border-radius:9px;background:#c27c00;color:#fff}
+.av{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff;background:#8764b8}
+.adonav{background:var(--hover);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:8px 6px;gap:1px;overflow:auto;font-size:13.5px}
+.adonav .proj{display:flex;align-items:center;gap:8px;padding:6px 8px 10px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.adonav .ptile{width:28px;height:28px;border-radius:4px;background:#8764b8;color:#fff;display:grid;place-items:center;font-weight:700}
+.adonav .plus{margin-left:auto;color:var(--muted)}
+.adonav a{color:var(--text);text-decoration:none;cursor:pointer;border-radius:4px}
+.adonav .ni{display:flex;align-items:center;gap:10px;padding:7px 8px}
+.adonav .ni:hover,.adonav .sub-ni a:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.adonav .ic{width:20px;height:20px;border-radius:4px;background:var(--c);color:#fff;display:grid;place-items:center;font-size:11px}
+.adonav .ni.open{font-weight:600}
+.adonav .sub-ni{display:flex;flex-direction:column;margin:0 0 4px 30px}
+.adonav .sub-ni a{padding:5px 8px}
+.adonav .sub-ni a.on{background:var(--sel);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
+.adonav .navtoggle{background:none;border:0;font:inherit;color:var(--muted);cursor:pointer;text-align:left;border-radius:4px}
+.shell.navmin{grid-template-columns:52px minmax(0,1fr)}
+.navmin .adonav{padding:8px 4px}
+.navmin .adonav .ni{font-size:0;justify-content:center;padding:7px 0;gap:0}
+.navmin .adonav .ni .ic{font-size:11px}
+.navmin .adonav .sub-ni,.navmin .adonav .proj b,.navmin .adonav .plus{display:none}
+.navmin .adonav .proj{justify-content:center;padding:6px 0 10px}
+.navmin .adonav .ni.open .ic{box-shadow:0 0 0 2px var(--accent)}
+.hub{position:relative;background:var(--bg)}
+.hub iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg);opacity:0;visibility:hidden;transition:opacity .18s}
+.hub iframe.on{opacity:1;visibility:visible}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:30}
+.toast[hidden]{display:none}
+@media (max-width:900px){.shell{grid-template-columns:0 minmax(0,1fr)}.adonav{display:none}.adoh .search{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="notice"><b>Live demo</b><span>ADO Work Map, shown as an extension for Azure DevOps: the Work Map and a Sprint planning preview</span><span class="sep">&middot;</span>
+  <span>Sample data, runs only in your browser &mdash; nothing is sent anywhere</span><span class="grow"></span>
+  <a href="https://github.com/DasCondor/ado-work-map" target="_blank" rel="noopener noreferrer">GitHub</a>
+  <span class="sub">Not affiliated with Microsoft</span></div>
+<header class="adoh">
+  <span class="brand"><span class="logo"></span>ADO Work Map</span>
+  <span class="crumbs">demo / Phoenix / Boards / <b id="crumbhub"></b></span>
+  <span class="grow"></span>
+  <span class="search">&#128269; Search</span>
+  <span class="demo" title="A mock-up of the extension: only this hub works, and it never connects to Azure DevOps">DEMO</span>
+  <button class="hicon" id="navtoggle2" title="Show or hide the navigation">&#9776;</button><span class="hicon" title="Help">?</span><span class="hicon" title="User settings">&#9881;</span>
+  <span class="av">PO</span>
+</header>
+<nav class="adonav">
+  <div class="proj"><span class="ptile">P</span><b>Phoenix</b><span class="plus">+</span></div>
+  <a class="ni" data-mock="Overview"><span class="ic" style="--c:#0078d4">&#9632;</span>Overview</a>
+  <a class="ni open" data-mock=""><span class="ic" style="--c:#009a5f">&#9638;</span>Boards</a>
+  <div class="sub-ni">
+    <a data-mock="Work items">Work items</a><a data-mock="Boards">Boards</a><a data-mock="Backlogs">Backlogs</a><a data-mock="Sprints">Sprints</a>
+    <a data-mock="Queries">Queries</a><a data-mock="Delivery Plans">Delivery Plans</a><a href="sprint-planning.html" data-hub="plan">Sprint planning</a><a href="index.html" data-hub="map">Work Map</a>
+  </div>
+  <a class="ni" data-mock="Repos"><span class="ic" style="--c:#e05a00">&#9670;</span>Repos</a>
+  <a class="ni" data-mock="Pipelines"><span class="ic" style="--c:#0063b1">&#9654;</span>Pipelines</a>
+  <a class="ni" data-mock="Test Plans"><span class="ic" style="--c:#7a3fb3">&#10003;</span>Test Plans</a>
+  <a class="ni" data-mock="Artifacts"><span class="ic" style="--c:#c4314b">&#9679;</span>Artifacts</a>
+  <span class="grow"></span>
+  <a class="ni" data-mock="Project settings"><span class="ic" style="--c:#605e5c">&#9881;</span>Project settings</a>
+  <button class="ni navtoggle" id="navtoggle" title="Collapse the navigation"><span class="ic" style="--c:#605e5c">&laquo;</span>Collapse</button>
+</nav>
+<main class="hub"><iframe id="hub-map" data-hub="map" title="Work Map"></iframe><iframe id="hub-plan" data-hub="plan" title="Sprint planning"></iframe></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script>
+const $ = s => document.querySelector(s);
+// Both hubs run in the hub area, the way Azure DevOps extension hubs do. Each is loaded once and kept, so
+// switching between them is instant and keeps your place; the address bar still changes (index.html /
+// sprint-planning.html) so links and Back work.
+const HUBS = {
+  map: {page: 'index.html', src: 'work-map.html', name: 'Work Map', title: 'Work Map - ADO Work Map live demo'},
+  plan: {page: 'sprint-planning.html', src: 'planning.html', name: 'Sprint planning', title: 'Sprint planning - ADO Work Map live demo'}
+};
+const START = '__HUB__';
+let current = null, themeAt = {};
+const themeNow = () => { try { return localStorage.getItem('adomap.theme') || ''; } catch (e) { return ''; } };
+function load(h, hash) { const f = $('#hub-' + h); if (!f.src) { f.src = HUBS[h].src + (hash || ''); themeAt[h] = themeNow(); } }
+function showHub(h, push) {
+  if (!HUBS[h] || h === current) return;
+  load(h);
+  // a hub loaded before a theme change elsewhere is reloaded so it matches
+  if (themeAt[h] != null && themeAt[h] !== themeNow()) { themeAt[h] = themeNow(); $('#hub-' + h).contentWindow.location.reload(); }
+  document.querySelectorAll('.hub iframe').forEach(f => f.classList.toggle('on', f.dataset.hub === h));
+  document.querySelectorAll('.sub-ni a[data-hub]').forEach(a => a.classList.toggle('on', a.dataset.hub === h));
+  $('#crumbhub').textContent = HUBS[h].name;
+  document.title = HUBS[h].title;
+  if (push) history.pushState({hub: h}, '', HUBS[h].page);
+  current = h;
+}
+load(START, START === 'map' ? location.hash : '');
+showHub(START, false);
+history.replaceState({hub: START}, '', location.href);
+// load the other hub quietly once this one is up, so the first switch is instant too
+$('#hub-' + START).addEventListener('load', () => setTimeout(() => load(START === 'map' ? 'plan' : 'map'), 300), {once: true});
+window.addEventListener('popstate', e => showHub((e.state && e.state.hub) || (/sprint-planning/.test(location.pathname) ? 'plan' : 'map'), false));
+document.addEventListener('click', e => { const a = e.target.closest('.sub-ni a[data-hub]'); if (!a) return; e.preventDefault(); showHub(a.dataset.hub, true); });
+const toast = msg => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); };
+document.addEventListener('click', e => { const m = e.target.closest('[data-mock]'); if (!m) return; e.preventDefault();
+  if (m.dataset.mock) toast(`${m.dataset.mock} isn't part of this demo - only the Work Map and Sprint planning hubs are.`); });
+// Collapsible navigation, shared with the sprint planning demo
+function setNav(min) {
+  $('.shell').classList.toggle('navmin', min);
+  $('#navtoggle').innerHTML = min ? '<span class="ic" style="--c:#605e5c">&raquo;</span>Expand' : '<span class="ic" style="--c:#605e5c">&laquo;</span>Collapse';
+  $('#navtoggle').title = min ? 'Expand the navigation' : 'Collapse the navigation';
+  try { localStorage.setItem('adomap.planning.nav', min ? 'min' : ''); } catch (e) {}
+}
+document.querySelectorAll('.adonav .ni').forEach(a => { if (!a.title) a.title = a.textContent.trim(); });
+$('#navtoggle').onclick = $('#navtoggle2').onclick = () => setNav(!$('.shell').classList.contains('navmin'));
+try { setNav(localStorage.getItem('adomap.planning.nav') === 'min'); } catch (e) { setNav(false); }
+// Follow the theme picked inside the report
+window.addEventListener('storage', e => { if (e.key !== 'adomap.theme') return; let t = 'auto'; try { t = JSON.parse(e.newValue || '"auto"'); } catch (err) {}
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; });
+</script>
+</body>
+</html>

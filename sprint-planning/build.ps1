@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build the sprint planning live demo (docs\sprint-planning.html).
+    Build the sprint planning live demo hub (docs\planning.html).
 
 .DESCRIPTION
     A preview of a sprint planning hub for the ADO Work Map extension: capacity with partial
@@ -20,7 +20,7 @@ param([string]$OutFile)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = Split-Path -Parent $here
-if (-not $OutFile) { $OutFile = Join-Path $repo 'docs\sprint-planning.html' }
+if (-not $OutFile) { $OutFile = Join-Path $repo 'docs\planning.html' }
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('adomap_planning_' + [guid]::NewGuid().ToString('N'))
 try {

@@ -36,6 +36,8 @@ A look at where ADO Work Map could go next: a **sprint planning** hub for Azure 
 - **Planning poker** with the full story &mdash; description, acceptance criteria, tasks and links &mdash; in a work item form, plus a team confidence vote to commit.
 - **Fill the sprint** in people lanes or swimlanes (backlog &times; sprints), with one-click **Validation** and **Assisting team member** tasks.
 
+The [live demo](https://dascondor.github.io/ado-work-map/) now opens as it would look installed: the Work Map and Sprint planning as hubs under **Boards** in an Azure DevOps-style frame, with a collapsible side panel and Azure DevOps colours. Switching between the two hubs happens in place, and each keeps its place.
+
 <img src="docs/images/sprint-planning.png" alt="Sprint planning demo: capacity check-in with time off per day, for a 4-week sprint" width="900">
 
 ### 1.1.1 &mdash; heatmap tooltip fix

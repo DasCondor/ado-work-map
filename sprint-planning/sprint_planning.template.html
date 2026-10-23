@@ -9,7 +9,9 @@
 <title>Sprint planning - ADO Work Map live demo</title>
 <script>
 (function () { let t = 'auto'; try { t = JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); } catch (e) {}
-  if (t !== 'auto') document.documentElement.dataset.theme = t; })();
+  if (t !== 'auto') document.documentElement.dataset.theme = t;
+  // Inside the demo site's frame, show only the hub (the frame has the navigation)
+  try { if (window.top !== window.self) document.documentElement.classList.add('embedded'); } catch (e) { document.documentElement.classList.add('embedded'); } })();
 </script>
 <style>
 :root{--bg:#f8f8f8;--panel:#fff;--text:#201f1e;--muted:#605e5c;--line:#e1dfdd;--hover:#f3f2f1;--sel:#deecf9;--accent:#0078d4;
@@ -49,6 +51,8 @@ body{overflow:hidden}
 .adonav .sub-ni a.on{background:var(--sel);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
 .adonav .grow{flex:1}
 .hub{overflow:auto;background:var(--bg)}
+.embedded .notice,.embedded .adoh,.embedded .adonav{display:none}
+.embedded .shell,.embedded .shell.navmin{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .adoh button.hicon{background:none;border:0;font:inherit;cursor:pointer}
 .adonav .navtoggle{background:none;border:0;font:inherit;color:var(--muted);cursor:pointer;text-align:left;border-radius:4px}
 .shell{transition:grid-template-columns .15s}
