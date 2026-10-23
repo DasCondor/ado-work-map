@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.5
+
+- Spider web: more room between items and around labels, story-and-task groups kept together, gentler pulls from repos and related links
+- Spider web: zoomed out on big views, tasks/PRs/branches/commits show as dots until you zoom in
+- Fixed: the layout could start before the canvas had its size and stay a circle in the middle
+
 ## 1.4.4
 
 - Spider web: the layout spreads to the shape of the canvas, so wide screens get a wide graph; small graphs are widened when the layout finishes

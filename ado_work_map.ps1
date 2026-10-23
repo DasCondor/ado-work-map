@@ -2371,7 +2371,8 @@ function MiniGraph(host, NS, ES, fg) {
   function resize() {
     dpr = window.devicePixelRatio || 1; W = host.clientWidth; H = host.clientHeight;
     cv.width = Math.max(1, W * dpr); cv.height = Math.max(1, H * dpr);
-    if (!userMoved) fit();   // the first real size can arrive after a small layout has already finished
+    // the first real size can arrive after a small layout has already finished: reshape it to the canvas then
+    if (!userMoved) { if (!running) widen(); fit(); }
     paint();
   }
   const ro = new ResizeObserver(resize); ro.observe(host);
@@ -2434,6 +2435,7 @@ function MiniGraph(host, NS, ES, fg) {
     for (const id of order) {
       const p = P.get(id), s = NS.get(id); if (!p) continue;
       if (s.font.size * k < 3 && id !== sel) continue;   // very far out: dots only, zoom in for names
+      if (size(id) <= 10 && s.font.size * k < 8 && id !== sel) continue;   // zoomed out: tasks, PRs, branches and commits stay dots
       const db = s.shape === 'database', fs = db ? Math.max(9, s.font.size * k) : Math.max(MIN_LABEL_PX, s.font.size * k);
       ctx.font = `${s.font.bold ? '600 ' : ''}${fs}px system-ui,Segoe UI,sans-serif`;
       const tw = ctx.measureText(s.label).width, cx = view.x + p.x * k;
@@ -2478,15 +2480,16 @@ function MiniGraph(host, NS, ES, fg) {
     const idx = new Map(ids.map((id, i) => [id, i]));
     const X = new Float64Array(n), Y = new Float64Array(n), VX = new Float64Array(n), VY = new Float64Array(n), M = new Float64Array(n);
     ids.forEach((id, i) => { const p = P.get(id); X[i] = p.x; Y[i] = p.y; M[i] = NS.get(id).mass || 1; });
-    const E = []; eids.forEach(e => { const s = ES.get(e), a = idx.get(s.from), b = idx.get(s.to); if (a != null && b != null) E.push(a, b); });
-    const rest = 95, kSpring = .035, kRep = 3600, cell = 170, grav = .005, damp = .8, gX = grav / aspect(), gY = grav * aspect();
+    const E = [], EL = [], EK = []; eids.forEach(e => { const s = ES.get(e), a = idx.get(s.from), b = idx.get(s.to);
+      if (a != null && b != null) { E.push(a, b); EL.push(s.len || 95); EK.push(s.pull || 1); } });
+    const kSpring = .035, kRep = 9000, cell = 230, grav = .005, damp = .8;
     const BW = new Float64Array(n), BH = new Float64Array(n), BO = new Float64Array(n);
-    ids.forEach((id, i) => { const b = box(id); BW[i] = b.w; BH[i] = b.h; BO[i] = b.oy; });
+    ids.forEach((id, i) => { const b = box(id); BW[i] = b.w + 24; BH[i] = b.h + 12; BO[i] = b.oy; });   // + a margin, so labels never touch
     let cc = cell; for (let i = 0; i < n; i++) cc = Math.max(cc, BW[i], BH[i]); cc = Math.min(cc, 420);
     let it = 0; running = true;
     const step = () => {
       // Work in ~14 ms slices, so the page stays responsive (and it keeps going where animation frames are throttled)
-      const t0 = performance.now();
+      const t0 = performance.now(), gX = grav / aspect(), gY = grav * aspect();   // re-read: the canvas size can arrive mid-layout
       for (; it < iters && performance.now() - t0 < 14; it++) {
         const cool = 1 - .85 * it / iters, grid = new Map(), FX = new Float64Array(n), FY = new Float64Array(n);
         for (let i = 0; i < n; i++) { const k = Math.floor(X[i] / cell) * 100003 + Math.floor(Y[i] / cell); let c = grid.get(k); if (!c) grid.set(k, c = []); c.push(i); }
@@ -2505,7 +2508,7 @@ function MiniGraph(host, NS, ES, fg) {
           }
         }
         for (let e = 0; e < E.length; e += 2) {
-          const a = E[e], b = E[e + 1], dx = X[b] - X[a], dy = Y[b] - Y[a], d = Math.sqrt(dx * dx + dy * dy) || .1, fs = kSpring * (d - rest);
+          const a = E[e], b = E[e + 1], dx = X[b] - X[a], dy = Y[b] - Y[a], d = Math.sqrt(dx * dx + dy * dy) || .1, fs = kSpring * EK[e / 2] * (d - EL[e / 2]);
           FX[a] += dx / d * fs; FY[a] += dy / d * fs; FX[b] -= dx / d * fs; FY[b] -= dy / d * fs;
         }
         const maxV = 35 * cool;
@@ -2546,14 +2549,14 @@ function MiniGraph(host, NS, ES, fg) {
     raf = setTimeout(step, 0);
   }
   function stop() { clearTimeout(raf); running = false; }
-  // Small graphs keep a round shape whatever the canvas: stretch them sideways (up to 1.8x) to use a wide canvas
+  // Give the finished layout the canvas's proportions, so it fills the width and the height (stretch up to 1.8x)
   function widen() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     ids.forEach(id => { const p = P.get(id); x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
     const w = x1 - x0, h = y1 - y0, want = W && H ? W / H : 1;
-    if (!(w > 0 && h > 0) || w / h >= want) return;
-    const f = Math.min(1.8, want * h / w), cx = (x0 + x1) / 2;
-    ids.forEach(id => { const p = P.get(id); p.x = cx + (p.x - cx) * f; });
+    if (!(w > 0 && h > 0) || !W) return;
+    const fx = Math.min(1.8, Math.max(1, want * h / w)), fy = Math.min(1.8, Math.max(1, w / h / want)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    ids.forEach(id => { const p = P.get(id); p.x = cx + (p.x - cx) * fx; p.y = cy + (p.y - cy) * fy; });
   }
 
   // ---- interaction ----
@@ -2669,8 +2672,13 @@ function initGraph() {
   const EDGE = {child: {color: muted, width: 1.2}, related: {color: muted, dashes: true}, depends: {color: '#dc2626', arrow: true},
                 artifact: {color: '#0d9488', width: .8}, 'in-repo': {color: '#475569', width: .8}, 'pr-branch': {color: '#2563eb', dashes: [2, 3]},
                 'wi-repo': {color: '#475569', dashes: [6, 4], width: .8}, rollup: {color: '#64748b'}};
-  const ES = new Map(allEdges.map(e => [e.id, Object.assign({from: e.from, to: e.to}, EDGE[e.kind] || {color: muted},
-    e.kind === 'rollup' ? {width: 1 + Math.min(6, Math.log2(e.count))} : {})]));
+  const kindOf = id => (nodeById.get(id) || {}).kind;
+  const CHILD_LEN = {Task: 85, Bug: 150, Story: 150, Tech: 150, Feature: 220, Other: 130};
+  const PULL = {child: [0, 1], artifact: [65, 1], 'pr-branch': [60, 1], 'in-repo': [240, .3], 'wi-repo': [260, .15],
+                related: [210, .3], depends: [180, .5], rollup: [240, .4]};
+  const ES = new Map(allEdges.map(e => { const p = PULL[e.kind] || [95, 1];
+    return [e.id, Object.assign({from: e.from, to: e.to, len: e.kind === 'child' ? CHILD_LEN[kindOf(e.to)] || 95 : p[0], pull: p[1]},
+      EDGE[e.kind] || {color: muted}, e.kind === 'rollup' ? {width: 1 + Math.min(6, Math.log2(e.count))} : {})]; }));
   const edgeMeta = new Map(allEdges.map(e => [e.id, e]));
 
   let scope = SPR.length ? 'sprint' : 'overview', focusId = null, force = false, visible = new Set();
