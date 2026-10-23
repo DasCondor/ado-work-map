@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.3
+
+- Sprint detail: By person beside the sprint strip and totals
+- Commit heatmap: Top repos and Top people beside the heatmap
+
 ## 1.4.2
 
 - Commit heatmap: Top repos and Top people moved above the heatmap

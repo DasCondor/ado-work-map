@@ -1269,7 +1269,19 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 .sp:hover{background:var(--hover)} .sp.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .sp.tf-current b::after{content:" \2022 now";color:var(--accent);font-size:11px}
 .sp.tf-past{opacity:.85}
-.sgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
+.sp-people,.sp-work{margin-top:12px}
+@media (min-width:901px){
+  #sprints.det.on{display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,32%,560px);column-gap:12px;align-items:start}
+  #sprints.det #sbody{display:contents}
+  #sprints.det>#strip{grid-area:1/1} #sprints.det>.toolbar{grid-area:2/1} #sprints.det .kpis{grid-area:3/1}
+  /* contain:size keeps a long list from stretching the rows beside it; it scrolls instead */
+  #sprints.det .sp-people{grid-area:1/2/4/3;align-self:stretch;contain:size;overflow:auto;margin:0}
+  #sprints.det .sp-work{grid-area:4/1/5/3}
+}
+.hmwrap{display:grid;grid-template-columns:minmax(0,max-content) minmax(280px,1fr);gap:12px;align-items:start;margin-top:12px}
+.hmwrap #hm{min-width:0;overflow-x:auto}
+.hmside{display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (max-width:1100px){.hmwrap{grid-template-columns:minmax(0,1fr)}}
 .smap{position:relative;overflow:auto;max-height:calc(100vh - 220px)}
 #smtip{pointer-events:auto;line-height:1.7;white-space:normal;max-width:460px;max-height:320px;overflow:auto;z-index:4}
 #smtip .badge{margin-right:4px}
@@ -1323,7 +1335,7 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
 }
 @media (max-width:900px){
   main{padding:12px 16px} .fbar{padding:8px 16px}
-  .sgrid,.web,.two{grid-template-columns:1fr}
+  .web,.two{grid-template-columns:1fr}
   .tree .row,.tree.sprint .row{grid-template-columns:14px 64px 66px 1fr auto}
   .tree .row>:nth-child(n+6){display:none}
 }
@@ -1750,6 +1762,7 @@ function renderSprints() {
   const strip = $('#strip'), on = $('#strip .sp.on');
   if (on && !renderSprints.scrolled && strip.clientWidth) { strip.scrollLeft = on.offsetLeft - strip.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2; renderSprints.scrolled = true; }
   segSet('#sview', 'v', sprintView);
+  $('#sprints').classList.toggle('det', sprintView === 'detail');
   if (sprintView === 'velocity') renderVelocity(st);
   else if (sprintView === 'map') renderSprintMap();
   else renderSprintDetail(st);
@@ -1778,14 +1791,12 @@ function renderSprintDetail(st) {
       <div class="kpi"><span class="sub">Remaining work (h)</span><b>${x.rem}</b></div>
       <div class="kpi"><span class="sub">In progress / not started</span><b>${x.tasks.active + x.work.active} <span class="sub">/ ${x.tasks.new + x.work.new}</span></b></div>
     </div>
-    <div class="sgrid" style="margin-top:12px">
-      <div class="card"><h3>By person <span class="sub">(click to filter everything)</span></h3>
-        <div class="tablewrap"><table id="ptab"><thead><tr><th>Person</th><th>Done</th><th>Active</th><th>New</th><th>Rem. h</th><th></th></tr></thead><tbody>${prow || '<tr><td colspan="6" class="sub">Nobody in this sprint.</td></tr>'}</tbody></table></div></div>
-      <div>
-        <div class="toolbar"><b>Work in ${esc(s.name)}</b><span class="sub">Collapse to</span>
-          <div class="seg" id="sDepth"><button data-l="0">Epic</button><button data-l="1">Feature</button><button data-l="2">Story</button><button data-l="9">Task</button></div></div>
-        <div class="card tree sprint" id="stree"></div>
-      </div>
+    <div class="card sp-people"><h3>By person <span class="sub">(click to filter everything)</span></h3>
+      <div class="tablewrap"><table id="ptab"><thead><tr><th>Person</th><th>Done</th><th>Active</th><th>New</th><th>Rem. h</th><th></th></tr></thead><tbody>${prow || '<tr><td colspan="6" class="sub">Nobody in this sprint.</td></tr>'}</tbody></table></div></div>
+    <div class="sp-work">
+      <div class="toolbar"><b>Work in ${esc(s.name)}</b><span class="sub">Collapse to</span>
+        <div class="seg" id="sDepth"><button data-l="0">Epic</button><button data-l="1">Feature</button><button data-l="2">Story</button><button data-l="9">Task</button></div></div>
+      <div class="card tree sprint" id="stree"></div>
     </div>`;
   $('#ptab').onclick = e => { const r = e.target.closest('tr.click'); if (r) setFilter('person', F.person.includes(r.dataset.p) ? F.person.filter(p => p !== r.dataset.p) : [r.dataset.p]); };
   // Sprint tree: items in the sprint plus their parents for context, with counts and remaining hours rolled up
@@ -2230,14 +2241,15 @@ function renderHeatmap() {
       <div class="kpi"><span class="sub">Per active day</span><b>${active ? (total / active).toFixed(1) : 0}</b></div>
       <div class="kpi"><span class="sub">People</span><b>${byWho.size}</b></div>
     </div>
-    <div class="two" style="margin-top:12px">
+    <div class="hmwrap">
+    <div class="card" id="hm">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
+      `<svg viewBox="0 0 ${W} ${H}" style="width:${spDays ? W * 1.6 : W * 1.25}px;max-width:100%;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
+      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
+      <div class="gtip" id="hmtip" hidden></div></div>
+    <div class="hmside">
       <div class="card"><h3>Top repos</h3><table><tbody>${top(byRepo, rname)}</tbody></table></div>
       <div class="card"><h3>Top people</h3><table><tbody>${top(byWho, a => a, true)}</tbody></table><div class="sub" style="margin-top:6px">Click a person to show only them. Names and email accounts that belong to one person (e.g. First.Last.CTR) are counted together.</div></div>
-    </div>
-    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
-      `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${spDays ? W * 1.6 : W * 1.25}px;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
-      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
-      <div class="gtip" id="hmtip" hidden></div></div>`;
+    </div></div>`;
   segSet('#hmView', 'v', hmView);
   $$('#hmView button').forEach(b => b.onclick = () => { hmView = b.dataset.v; store.set('hmView', hmView); renderHeatmap(); });
   $('#hmRepo').onchange = e => { hmRepo = e.target.value; renderHeatmap(); };
