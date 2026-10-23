@@ -90,7 +90,7 @@ param(
     [string]$Iteration,
     [string[]]$EpicId,
     [string]$AreaPath,
-    [string[]]$Types = @('Epic', 'Feature', 'User Story', 'Product Backlog Item', 'Requirement', 'Bug', 'Task'),
+    [string[]]$Types = @('Epic', 'Feature', 'User Story', 'Technical Story', 'Product Backlog Item', 'Requirement', 'Bug', 'Task'),
     [int]$ClosedWithinDays = -1,
     [switch]$IncludeRemoved,
     [string]$Pat,
@@ -120,10 +120,10 @@ $ScriptPath = $MyInvocation.MyCommand.Path
 $ScriptDir = Split-Path -Parent $ScriptPath
 $ApiVersion = '7.1'
 $AdoResource = '499b84ac-1321-427f-aa17-267ca6975798'   # Azure DevOps AAD app id
-$StoryTypes = @('User Story', 'Product Backlog Item', 'Requirement')
-$Levels = @{ 'Epic' = 0; 'Feature' = 1; 'User Story' = 2; 'Product Backlog Item' = 2; 'Requirement' = 2; 'Bug' = 2; 'Task' = 3 }
+$StoryTypes = @('User Story', 'Technical Story', 'Product Backlog Item', 'Requirement')
+$Levels = @{ 'Epic' = 0; 'Feature' = 1; 'User Story' = 2; 'Technical Story' = 2; 'Product Backlog Item' = 2; 'Requirement' = 2; 'Bug' = 2; 'Task' = 3 }
 $TypeColors = @{
-    Epic = '#e06c00'; Feature = '#773b93'; Story = '#009ccc'; Bug = '#cc293d'; Task = '#c99a06'; Other = '#8a8a8a'
+    Epic = '#e06c00'; Feature = '#773b93'; Story = '#009ccc'; Tech = '#2a9d8f'; Bug = '#cc293d'; Task = '#c99a06'; Other = '#8a8a8a'
     Repo = '#475569'; PR = '#0d9488'; Commit = '#94a3b8'; Branch = '#2563eb'; Build = '#a16207'
 }
 
@@ -715,6 +715,7 @@ function Get-Bucket([string]$Category, [string]$State) {
 }
 
 function Get-WiKind([string]$Type) {
+    if ($Type -eq 'Technical Story') { return 'Tech' }
     if ($StoryTypes -contains $Type) { return 'Story' }
     if (@('Epic', 'Feature', 'Bug', 'Task') -contains $Type) { return $Type }
     return 'Other'
@@ -1004,21 +1005,21 @@ function New-DemoData {
     }
     $sprints = @(11..16 | ForEach-Object { "$Project\Sprint $_" })
     $current = $sprints[3]
-    # Two-week sprints, Sprint 14 is the one running today
+    # Four-week sprints (Monday to the fourth Friday), Sprint 14 running today and Sprint 15 starting next Monday
     $today = (Get-Date).Date
-    $s14 = $today.AddDays(-((([int]$today.DayOfWeek) + 6) % 7) - 7)
+    $s15 = $today.AddDays(7 - ((([int]$today.DayOfWeek) + 6) % 7))
     $sprintStart = @{}
     $iterations = New-Object 'Collections.Generic.List[object]'
     foreach ($k in 11..16) {
-        $start = $s14.AddDays(($k - 14) * 14)
+        $start = $s15.AddDays(($k - 15) * 28)
         $sprintStart["$Project\Sprint $k"] = $start
         $iterations.Add(@{ name = "Sprint $k"; path = "$Project\Sprint $k"; start = $start.ToString('yyyy-MM-ddT00:00:00Z')
-                finish = $start.AddDays(13).ToString('yyyy-MM-ddT00:00:00Z'); timeFrame = '' })
+                finish = $start.AddDays(25).ToString('yyyy-MM-ddT00:00:00Z'); timeFrame = '' })
     }
     function Iso($d) { $d.ToString('yyyy-MM-ddTHH:mm:ssZ') }
     $people = @('Avery Chen', 'Jordan Patel', 'Sam Rivera', 'Taylor Brooks', 'Riley Okafor')
     $cats = @{}
-    foreach ($t in 'Epic', 'Feature', 'User Story', 'Bug', 'Task') {
+    foreach ($t in 'Epic', 'Feature', 'User Story', 'Technical Story', 'Bug', 'Task') {
         $cats["$t|New"] = 'Proposed'; $cats["$t|Active"] = 'InProgress'; $cats["$t|Resolved"] = 'Resolved'
         $cats["$t|Closed"] = 'Completed'; $cats["$t|Removed"] = 'Removed'
     }
@@ -1030,7 +1031,9 @@ function New-DemoData {
     function New-Item2($type, $title, $parent, $state, $iter, $extra) {
         $id = $st.nextId; $st.nextId = $st.nextId + 1
         $fields = @{ 'System.WorkItemType' = $type; 'System.Title' = $title; 'System.State' = $state
-            'System.IterationPath' = $iter; 'System.AreaPath' = $Project; 'System.AssignedTo' = @{ displayName = (Pick $people) } }
+            'System.IterationPath' = $iter; 'System.AreaPath' = "$Project\$(Pick @('Web', 'Web', 'Web\Portal', 'Mobile', 'Platform'))"
+            'System.Tags' = ((@('customer-facing', 'tech-debt', 'security', 'needs-review', 'blocked', 'quick-win') | Where-Object { $rnd.NextDouble() -lt 0.2 }) -join '; ')
+            'System.AssignedTo' = @{ displayName = (Pick $people) } }
         if ($extra) { foreach ($k in $extra.Keys) { $fields[$k] = $extra[$k] } }
         $base = if ($sprintStart.ContainsKey($iter)) { $sprintStart[$iter] } else { $today.AddDays(-$rnd.Next(5, 60)) }
         $created = $base.AddDays(-$rnd.Next(1, 25)).AddHours($rnd.Next(8, 18))
@@ -1080,7 +1083,7 @@ function New-DemoData {
                 if ($featDone -or $r -lt ($p - 0.15)) { $state = 'Closed'; $iter = Pick $sprints[0..2] }
                 elseif ($r -lt ($p + 0.2)) { $state = Pick @('Active', 'Active', 'Resolved', 'New'); $iter = $current }
                 else { $state = 'New'; $iter = Pick (@($sprints[4..5]) + $Project) }
-                $stype = if ($rnd.NextDouble() -lt 0.15) { 'Bug' } else { 'User Story' }
+                $r2 = $rnd.NextDouble(); $stype = if ($r2 -lt 0.15) { 'Bug' } elseif ($r2 -lt 0.3) { 'Technical Story' } else { 'User Story' }
                 $story = New-Item2 $stype "$(Pick $verbs) $($fTitle.ToLower()) part $($s + 1)" $feat $state $iter @{ 'Microsoft.VSTS.Scheduling.StoryPoints' = (Pick @(1, 2, 3, 5, 8)) }
                 $branch = "feature/$($story.id)-" + $fTitle.ToLower().Replace('&', 'and').Replace(' ', '-')
                 if ($state -ne 'New') {
@@ -1104,7 +1107,7 @@ function New-DemoData {
             }
         }
     }
-    $stories = @($raw | Where-Object { @('User Story', 'Bug') -contains $_.fields.'System.WorkItemType' })
+    $stories = @($raw | Where-Object { @('User Story', 'Technical Story', 'Bug') -contains $_.fields.'System.WorkItemType' })
     for ($x = 0; $x -lt 6; $x++) {
         $a = Pick $stories; $b = Pick $stories
         if ($a.id -eq $b.id) { continue }
@@ -1195,8 +1198,18 @@ nav button{background:none;border:0;border-bottom:2px solid transparent;padding:
 nav button.on{color:var(--text);border-color:var(--accent)}
 .fbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 20px;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .fbar select{max-width:220px}
+.pick{position:relative}
+.pick summary{list-style:none;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 24px 5px 9px;font-size:13px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick summary::-webkit-details-marker{display:none}
+.pick summary::after{content:"\25BE";position:absolute;right:8px;top:5px;color:var(--muted)}
+.pick.on summary{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.pick .menu{position:absolute;top:calc(100% + 4px);left:0;z-index:30;min-width:260px;max-width:440px;max-height:340px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.pick .menu input[type=search]{width:100%;min-width:0;margin-bottom:6px}
+.pick .menu label{display:flex;gap:6px;align-items:center;padding:3px 4px;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:13px}
+.pick .menu label:hover{background:var(--hover)}
+.pick .menu .def{border-top:1px solid var(--line);margin-top:4px;padding-top:6px}
 .fbar .on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-main{padding:14px 20px;max-width:1600px;margin:0 auto}
+main{padding:14px 20px}
 main>section{display:none} main>section.on{display:block}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px;display:flex;flex-direction:column;gap:4px}
@@ -1251,13 +1264,15 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 .tablewrap{overflow-x:auto}
 tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{background:var(--sel)}
 /* sprints */
-.strip{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px}
+.strip{position:sticky;top:56px;z-index:4;background:var(--bg);display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px}
 .sp{flex:0 0 170px;display:flex;flex-direction:column;gap:3px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);cursor:pointer;font:inherit}
 .sp:hover{background:var(--hover)} .sp.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .sp.tf-current b::after{content:" \2022 now";color:var(--accent);font-size:11px}
 .sp.tf-past{opacity:.85}
 .sgrid{display:grid;grid-template-columns:330px 1fr;gap:12px;align-items:start}
-.smap{overflow:auto;max-height:calc(100vh - 220px)}
+.smap{position:relative;overflow:auto;max-height:calc(100vh - 220px)}
+#smtip{pointer-events:auto;line-height:1.7;white-space:normal;max-width:460px;max-height:320px;overflow:auto;z-index:4}
+#smtip .badge{margin-right:4px}
 .smap table{border-radius:0}
 .smap th,.smap td{white-space:nowrap;padding:4px 6px}
 .smap th:first-child,.smap td:first-child{position:sticky;left:0;background:var(--panel);z-index:1;max-width:320px;overflow:hidden;text-overflow:ellipsis}
@@ -1328,10 +1343,11 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
 </nav>
 <div class="fbar">
   <input type="search" id="f-q" placeholder="Search title, #id, person, tag">
-  <select id="f-epic" title="Epic"></select>
-  <select id="f-person" title="Assigned to"></select>
-  <select id="f-area" title="Area path"></select>
-  <select id="f-tag" title="Tag"></select>
+  <details class="pick" id="f-epic"></details>
+  <details class="pick" id="f-person"></details>
+  <details class="pick" id="f-area"></details>
+  <details class="pick" id="f-tag"></details>
+  <details class="pick" id="f-notag"></details>
   <button class="btn" id="f-clear">Clear filters</button>
   <span class="sub" id="f-count"></span>
 </div>
@@ -1460,20 +1476,30 @@ const leaves = id => { let r = leafMemo.get(id); if (r) return r; const it = byI
 const sprintName = it => it.sp >= 0 ? SPR[it.sp].name : '';
 
 // ---------- global filters ----------
-const F = Object.assign({q: '', epic: '', person: '', area: '', tag: ''}, store.get('filters', {}));
-function passNoEpic(it) {
-  if (F.person && (F.person === '-' ? it.assignee : it.assignee !== F.person)) return false;
-  if (F.area && !(it.area === F.area || it.area.startsWith(F.area + '\\'))) return false;
-  if (F.tag && !(it.tags || '').split(/;\s*/).includes(F.tag)) return false;
-  if (F.q && !`#${it.id} ${it.title} ${it.assignee} ${it.tags} ${it.state}`.toLowerCase().includes(F.q)) return false;
+// People, tags and excluded tags are lists. The area path can have a saved default; excluded tags survive Clear filters.
+let defArea = store.get('defaultArea', '');
+const blankF = () => ({q: '', epic: '', person: [], area: defArea, tag: [], notag: []});
+const F = Object.assign(blankF(), store.get('filters', {}));
+['person', 'tag', 'notag'].forEach(k => { if (!Array.isArray(F[k])) F[k] = F[k] ? [F[k]] : []; });
+const KEYS = ['q', 'epic', 'person', 'area', 'tag', 'notag'];
+const tagsOf = it => (it.tags || '').split(/;\s*/).filter(Boolean);
+function passK(it, k) {   // one filter at a time, so each list in the bar can be narrowed by the others
+  switch (k) {
+    case 'epic': return !F.epic || (F.epic === 'none' ? it.epic == null : String(it.epic) === F.epic);
+    case 'person': return !F.person.length || F.person.includes(it.assignee || '-');
+    case 'area': return !F.area || it.area === F.area || it.area.startsWith(F.area + '\\');
+    case 'tag': return !F.tag.length || tagsOf(it).some(t => F.tag.includes(t));
+    case 'notag': return !F.notag.length || !tagsOf(it).some(t => F.notag.includes(t));
+    case 'q': return !F.q || `#${it.id} ${it.title} ${it.assignee} ${it.tags} ${it.state}`.toLowerCase().includes(F.q);
+  }
   return true;
 }
-function pass(it) {
-  if (F.epic && (F.epic === 'none' ? it.epic != null : String(it.epic) !== F.epic)) return false;
-  return passNoEpic(it);
-}
-const filtersOn = () => !!(F.q || F.epic || F.person || F.area || F.tag);
-const nonEpicFiltersOn = () => !!(F.q || F.person || F.area || F.tag);
+const passExcept = (it, skip) => KEYS.every(k => k === skip || passK(it, k));
+const passNoEpic = it => passExcept(it, 'epic');
+const pass = it => passExcept(it, '');
+const isOn = k => Array.isArray(F[k]) ? F[k].length > 0 : !!F[k];
+const filtersOn = () => KEYS.some(isOn);
+const nonEpicFiltersOn = () => KEYS.some(k => k !== 'epic' && isOn(k));
 let rollMemo = new Map();
 function roll(it) {   // leaf roll-up honouring every filter except the epic one
   let r = rollMemo.get(it.id); if (r) return r;
@@ -1486,25 +1512,60 @@ function roll(it) {   // leaf roll-up honouring every filter except the epic one
 
 const uniq = a => [...new Set(a.filter(Boolean))].sort((x, y) => x.localeCompare(y));
 const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
+// A dropdown checklist (single or multiple choice) with a search box once it has more than 5 entries
+function pick(id, o) {
+  const el = $('#' + id), chosen = Array.isArray(F[o.key]) ? F[o.key] : (F[o.key] ? [F[o.key]] : []);
+  const items = o.items.slice();
+  chosen.forEach(v => { if (!items.some(x => x[0] === v)) items.push([v, v]); });   // keep a choice visible even when nothing matches it now
+  const labelOf = v => (items.find(x => x[0] === v) || [v, v])[1];
+  const text = !chosen.length ? o.all : chosen.length > 1 ? `${o.label}: ${chosen.length}` : (o.multi ? o.label + ': ' : '') + labelOf(chosen[0]);
+  el.className = 'pick' + (chosen.length ? ' on' : '');
+  el.P = {o, items, chosen};
+  const q = el.querySelector('input[type=search]');
+  el.innerHTML = `<summary title="${esc(o.label)}">${esc(text)}</summary><div class="menu">` +
+    (items.length > 5 ? `<input type="search" placeholder="Find ${esc(o.label.toLowerCase())}" value="${esc(q ? q.value : '')}">` : '') +
+    `<div class="rows"></div>${o.extra || ''}</div>`;
+  pickRows(el);
+}
+function pickRows(el) {
+  const {o, items, chosen} = el.P, q = (el.querySelector('input[type=search]') || {value: ''}).value.trim().toLowerCase();
+  const rows = (q ? items.filter(x => x[1].toLowerCase().includes(q)) : items);
+  const row = (v, l, on) => `<label><input type="${o.multi ? 'checkbox' : 'radio'}" value="${esc(v)}"${on ? ' checked' : ''}> ${esc(l)}</label>`;
+  el.querySelector('.rows').innerHTML = (o.multi || q ? '' : row('', o.all, !chosen.length)) +
+    rows.slice(0, 300).map(([v, l]) => row(v, l, chosen.includes(v))).join('') +
+    (rows.length > 300 ? `<p class="sub" style="margin:4px">${rows.length - 300} more - type to narrow</p>` : '') +
+    (!rows.length ? '<p class="sub" style="margin:4px">Nothing matches.</p>' : '');
+}
 function buildFilterBar() {
-  const epics = D.items.filter(i => i.type === 'Epic').sort((a, b) => a.title.localeCompare(b.title));
-  $('#f-epic').innerHTML = opt('', 'All epics') + opt('none', 'Not under an epic') + epics.map(e => opt(e.id, `#${e.id} ${e.title.slice(0, 50)}`)).join('');
-  const people = uniq(D.items.map(i => i.assignee));
-  $('#f-person').innerHTML = opt('', 'Anyone') + opt('-', 'Unassigned') + people.map(p => opt(p, p)).join('');
-  $('#f-area').innerHTML = opt('', 'All areas') + uniq(D.items.map(i => i.area)).map(a => opt(a, a)).join('');
-  $('#f-tag').innerHTML = opt('', 'Any tag') + uniq(D.items.flatMap(i => (i.tags || '').split(/;\s*/))).map(t => opt(t, t)).join('');
-  for (const k of ['epic', 'person', 'area', 'tag']) { const el = $('#f-' + k); el.value = F[k]; if (el.value !== F[k]) F[k] = ''; }
+  const cand = k => D.items.filter(i => passExcept(i, k));
+  const ce = cand('epic'), ids = new Set(ce.map(i => i.epic));
+  const epics = D.items.filter(i => i.type === 'Epic' && ids.has(i.id)).sort((a, b) => a.title.localeCompare(b.title));
+  pick('f-epic', {key: 'epic', label: 'Epic', all: 'All epics', items: (ids.has(null) ? [['none', 'Not under an epic']] : []).concat(epics.map(e => [String(e.id), `#${e.id} ${e.title.slice(0, 50)}`]))});
+  const cp = cand('person');
+  pick('f-person', {key: 'person', multi: true, label: 'People', all: 'Anyone', items: (cp.some(i => !i.assignee) ? [['-', 'Unassigned']] : []).concat(uniq(cp.map(i => i.assignee)).map(p => [p, p]))});
+  pick('f-area', {key: 'area', label: 'Area path', all: 'All areas', items: uniq(cand('area').map(i => i.area)).map(a => [a, a]),
+    extra: F.area ? `<label class="def"><input type="checkbox" id="f-areadef"${defArea === F.area ? ' checked' : ''}> Open with this area path</label>`
+      : defArea ? `<p class="sub def">Default: ${esc(defArea)}</p>` : ''});
+  pick('f-tag', {key: 'tag', multi: true, label: 'Tags', all: 'Any tag', items: uniq(cand('tag').flatMap(tagsOf)).map(t => [t, t])});
+  pick('f-notag', {key: 'notag', multi: true, label: 'Excluded tags', all: 'Exclude tags', items: uniq(D.items.flatMap(tagsOf)).map(t => [t, t])});
   $('#f-q').value = F.q;
 }
 function syncFilterBar() {
-  for (const k of ['epic', 'person', 'area', 'tag']) { const el = $('#f-' + k); el.value = F[k]; el.classList.toggle('on', !!F[k]); }
   $('#f-q').classList.toggle('on', !!F.q);
   $('#f-count').textContent = filtersOn() ? `${D.items.filter(pass).length.toLocaleString()} of ${D.items.length.toLocaleString()} items match` : `${D.items.length.toLocaleString()} items`;
 }
-function setFilter(k, v) { F[k] = v; store.set('filters', F); rollMemo = new Map(); syncFilterBar(); renderAll(); }
-['epic', 'person', 'area', 'tag'].forEach(k => $('#f-' + k).onchange = e => setFilter(k, e.target.value));
+function setFilter(k, v) { F[k] = v; store.set('filters', F); rollMemo = new Map(); buildFilterBar(); syncFilterBar(); renderAll(); }
+$('.fbar').addEventListener('change', e => {
+  const p = e.target.closest('.pick'); if (!p || e.target.type === 'search') return;
+  if (e.target.id === 'f-areadef') { defArea = e.target.checked ? F.area : ''; store.set('defaultArea', defArea); buildFilterBar(); return; }
+  const k = p.id.slice(2), v = e.target.value;
+  if (Array.isArray(F[k])) setFilter(k, e.target.checked ? F[k].concat(v) : F[k].filter(x => x !== v));
+  else { p.open = false; setFilter(k, v); }
+});
+$('.fbar').addEventListener('input', e => { if (e.target.type === 'search' && e.target.closest('.pick')) pickRows(e.target.closest('.pick')); });
+document.addEventListener('click', e => $$('.pick[open]').forEach(p => { if (!p.contains(e.target)) p.open = false; }));
 $('#f-q').oninput = debounce(e => setFilter('q', e.target.value.trim().toLowerCase()), 250);
-$('#f-clear').onclick = () => { Object.assign(F, {q: '', epic: '', person: '', area: '', tag: ''}); $('#f-q').value = ''; setFilter('q', ''); };
+$('#f-clear').onclick = () => { Object.assign(F, blankF(), {notag: F.notag}); $('#f-q').value = ''; setFilter('q', ''); };
 
 // ---------- shared bits ----------
 const bar = r => { const t = (r.done + r.active + r.new) || 1;
@@ -1708,7 +1769,7 @@ function renderSprintDetail(st) {
   if (!tasks.length) work.forEach(t => { const k = t.assignee || 'Unassigned'; const p = people.get(k) || {done: 0, active: 0, new: 0, rem: 0}; p[t.bucket]++; people.set(k, p); });
   const prow = [...people.entries()].sort((a, b) => b[1].rem - a[1].rem || (b[1].active + b[1].new) - (a[1].active + a[1].new)).map(([k, p]) => {
     const val = k === 'Unassigned' ? '-' : k;
-    return `<tr class="click${F.person === val ? ' on' : ''}" data-p="${esc(val)}"><td class="t" style="max-width:150px">${esc(k)}</td><td class="n">${p.done}</td><td class="n">${p.active}</td><td class="n">${p.new}</td><td class="n">${p.rem}</td><td style="width:70px">${bar(p)}</td></tr>`; }).join('');
+    return `<tr class="click${F.person.includes(val) ? ' on' : ''}" data-p="${esc(val)}"><td class="t" style="max-width:150px">${esc(k)}</td><td class="n">${p.done}</td><td class="n">${p.active}</td><td class="n">${p.new}</td><td class="n">${p.rem}</td><td style="width:70px">${bar(p)}</td></tr>`; }).join('');
   $('#sbody').innerHTML = `
     <div class="kpis">
       <div class="kpi"><span class="sub">Tasks done</span><b>${x.tasks.done} <span class="sub">/ ${x.tasks.done + x.tasks.active + x.tasks.new}</span></b>${bar(x.tasks)}</div>
@@ -1726,7 +1787,7 @@ function renderSprintDetail(st) {
         <div class="card tree sprint" id="stree"></div>
       </div>
     </div>`;
-  $('#ptab').onclick = e => { const r = e.target.closest('tr.click'); if (r) setFilter('person', F.person === r.dataset.p ? '' : r.dataset.p); };
+  $('#ptab').onclick = e => { const r = e.target.closest('tr.click'); if (r) setFilter('person', F.person.includes(r.dataset.p) ? F.person.filter(p => p !== r.dataset.p) : [r.dataset.p]); };
   // Sprint tree: items in the sprint plus their parents for context, with counts and remaining hours rolled up
   const inSp = new Set(items.map(i => i.id));
   const agg = new Map();
@@ -1778,24 +1839,46 @@ function renderSprintMap() {
   const ea = new Map(), fa = new Map(), feats = new Map();
   D.items.forEach(it => { if (it.level < 2 || it.type === 'Task' || it.bucket === 'removed' || !pass(it)) return;
     const ek = it.epic == null ? 'none' : it.epic, fk = it.feature == null ? 'none:' + ek : it.feature, col = it.sp;
-    for (const [m, k] of [[ea, ek], [fa, fk]]) { let r = m.get(k); if (!r) m.set(k, r = new Map()); let x = r.get(col); if (!x) r.set(col, x = {done: 0, active: 0, new: 0}); x[it.bucket]++; }
+    for (const [m, k] of [[ea, ek], [fa, fk]]) { let r = m.get(k); if (!r) m.set(k, r = new Map()); let x = r.get(col); if (!x) r.set(col, x = {done: 0, active: 0, new: 0, items: []}); x[it.bucket]++; x.items.push(it); }
     if (!feats.has(ek)) feats.set(ek, new Set()); feats.get(ek).add(fk); });
-  const cell = m => cols.map(i => { const x = m && m.get(i); if (!x) return '<td></td>';
-    const n = x.done + x.active + x.new; return `<td><div class="cell" title="${x.done} done, ${x.active} in progress, ${x.new} not started">${x.done}/${n}${bar(x)}</div></td>`; }).join('');
+  const cells = new Map();   // "key|sprint" -> the stories in that cell, for the hover list
+  const cell = (m, key) => cols.map(i => { const x = m && m.get(i); if (!x) return '<td></td>';
+    cells.set(key + '|' + i, x); const n = x.done + x.active + x.new; return `<td><div class="cell" data-k="${esc(key + '|' + i)}">${x.done}/${n}${bar(x)}</div></td>`; }).join('');
   const inWin = m => m && cols.some(i => m.has(i));
   const epicKeys = [...ea.keys()].filter(k => inWin(ea.get(k))).sort((a, b) => (a === 'none') - (b === 'none') || a - b);
   const rows = epicKeys.map(ek => { const e = byId.get(ek), open = smapOpen.has(String(ek));
-    const head = `<tr class="ep-row" data-e="${ek}"><td title="${esc(e ? e.title : '')}">${open ? '&#9662;' : '&#9656;'} ${e ? `#${e.id} ${esc(e.title)}` : 'Not under an epic'}</td>${cell(ea.get(ek))}</tr>`;
+    const head = `<tr class="ep-row" data-e="${ek}"><td title="${esc(e ? e.title : '')}">${open ? '&#9662;' : '&#9656;'} ${e ? `${link(e)} ${esc(e.title)}` : 'Not under an epic'}</td>${cell(ea.get(ek), 'e' + ek)}</tr>`;
     if (!open) return head;
     return head + [...feats.get(ek)].filter(fk => inWin(fa.get(fk))).sort().map(fk => { const f = byId.get(fk);
-      return `<tr class="ft-row"><td title="${esc(f ? f.title : '')}">${f ? `${link(f)} ${esc(f.title)}` : '<span class="sub">No feature</span>'}</td>${cell(fa.get(fk))}</tr>`; }).join(''); }).join('');
+      return `<tr class="ft-row"><td title="${esc(f ? f.title : '')}">${f ? `${link(f)} ${esc(f.title)}` : '<span class="sub">No feature</span>'}</td>${cell(fa.get(fk), 'f' + fk)}</tr>`; }).join(''); }).join('');
   $('#sbody').innerHTML = `<div class="card smap"><table><thead><tr><th>Epic / feature</th>${cols.map(i => i < 0 ? '<th>Backlog</th>' :
     `<th data-i="${i}" class="${i === curIdx ? 'cur' : ''}" title="${esc(SPR[i].path)}">${esc(SPR[i].name)}<div class="sub">${fmtDate(SPR[i].start)}</div></th>`).join('')}</tr></thead>
-    <tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="sub">Nothing in these sprints matches the filters.</td></tr>`}</tbody></table></div>
-    <p class="sub">Click an epic to open its features; click a sprint heading to open that sprint.</p>`;
+    <tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="sub">Nothing in these sprints matches the filters.</td></tr>`}</tbody></table><div class="gtip" id="smtip" hidden></div></div>
+    <p class="sub">Click an epic to open its features; click a sprint heading to open that sprint. Hover a cell to see its stories.</p>`;
   $('#smapAll').onclick = e => { e.preventDefault(); smapAll = !smapAll; renderSprintMap(); };
-  $('#sbody .smap').onclick = e => { const th = e.target.closest('th[data-i]'); if (th) { selSprint = +th.dataset.i; sprintView = 'detail'; renderSprints(); return; }
+  const card = $('#sbody .smap');
+  card.onclick = e => { if (e.target.closest('a')) return;
+    const th = e.target.closest('th[data-i]'); if (th) { selSprint = +th.dataset.i; sprintView = 'detail'; renderSprints(); return; }
     const r = e.target.closest('tr.ep-row'); if (r) { const k = r.dataset.e; smapOpen.has(k) ? smapOpen.delete(k) : smapOpen.add(k); renderSprintMap(); } };
+  // Hover list of a cell's stories, with links; it stays while the pointer is on it
+  const tip = $('#smtip'); let cur = null;
+  card.onmousemove = e => {
+    if (e.target.closest('#smtip')) return;
+    const c = e.target.closest('.cell[data-k]');
+    if (!c) { tip.hidden = true; cur = null; return; }
+    if (c === cur) return;
+    cur = c; const x = cells.get(c.dataset.k), i = +c.dataset.k.split('|')[1];
+    const items = x.items.slice().sort((a, b) => a.id - b.id);
+    tip.innerHTML = `<b>${esc(i < 0 ? 'Backlog' : SPR[i].name)}</b> &middot; ${x.done} done, ${x.active} in progress, ${x.new} not started<br>` +
+      items.slice(0, 15).map(it => `${badge(it)}${link(it)} ${esc(it.title)} ${pill(it)}`).join('<br>') + (items.length > 15 ? `<br><span class="sub">+${items.length - 15} more</span>` : '');
+    tip.hidden = false;
+    const box = card.getBoundingClientRect();
+    let px = e.clientX - box.left + card.scrollLeft + 14, py = e.clientY - box.top + card.scrollTop + 14;
+    if (px + tip.offsetWidth > card.scrollLeft + box.width - 4) px = Math.max(card.scrollLeft + 4, e.clientX - box.left + card.scrollLeft - tip.offsetWidth - 10);
+    if (py + tip.offsetHeight > card.scrollTop + card.clientHeight - 4) py = Math.max(card.scrollTop + 4, e.clientY - box.top + card.scrollTop - tip.offsetHeight - 10);
+    tip.style.left = px + 'px'; tip.style.top = py + 'px';
+  };
+  card.onmouseleave = () => { tip.hidden = true; cur = null; };
 }
 
 // ---------- Changes ----------
@@ -1812,7 +1895,7 @@ function rangeBounds() {
 function passChange(c) {
   const it = byId.get(c.id);
   if (it) return pass(it);
-  if (F.person || F.area || F.tag || F.epic) return false;   // item left the scope: only text search applies
+  if (KEYS.some(k => k !== 'q' && isOn(k))) return false;   // item left the scope: only text search applies
   return !F.q || `#${c.id} ${c.title}`.toLowerCase().includes(F.q);
 }
 function renderChanges() {
@@ -2528,13 +2611,13 @@ function initGraph() {
   const fg = css.getPropertyValue('--text').trim(), done = css.getPropertyValue('--done').trim(),
         muted = css.getPropertyValue('--muted').trim();
   const G = D.graph, nodeById = new Map(G.nodes.map(n => [n.id, n]));
-  const SHAPE = {Epic: ['hexagon', 24], Feature: ['dot', 18], Story: ['dot', 12], Bug: ['triangle', 11], Task: ['dot', 7], Other: ['dot', 10],
+  const SHAPE = {Epic: ['hexagon', 24], Feature: ['dot', 18], Story: ['dot', 12], Tech: ['dot', 12], Bug: ['triangle', 11], Task: ['dot', 7], Other: ['dot', 10],
                  Repo: ['database', 0], PR: ['diamond', 10], Commit: ['dot', 4], Branch: ['triangleDown', 8], Build: ['square', 7]};
-  const ORDER = ['Epic', 'Feature', 'Story', 'Bug', 'Task', 'Other', 'Repo', 'PR', 'Branch', 'Commit', 'Build'];
+  const ORDER = ['Epic', 'Feature', 'Story', 'Tech', 'Bug', 'Task', 'Other', 'Repo', 'PR', 'Branch', 'Commit', 'Build'];
   const counts = {}; G.nodes.forEach(n => counts[n.kind] = (counts[n.kind] || 0) + 1);
   const on = new Set(ORDER.filter(k => counts[k] && !(k === 'Commit' && counts[k] > 400)));
   $('#kinds').innerHTML = ORDER.filter(k => counts[k]).map(k =>
-    `<label><input type="checkbox" data-k="${k}"${on.has(k) ? ' checked' : ''}><span class="sw" style="--c:${C[k]}"></span>${k === 'PR' ? 'Pull requests' : k}<span class="cnt">${counts[k]}</span></label>`).join('');
+    `<label><input type="checkbox" data-k="${k}"${on.has(k) ? ' checked' : ''}><span class="sw" style="--c:${C[k]}"></span>${k === 'PR' ? 'Pull requests' : k === 'Tech' ? 'Technical Story' : k}<span class="cnt">${counts[k]}</span></label>`).join('');
   if (!SPR.length) $('#g-scope option[value=sprint]').disabled = true;
   let gSprint = curIdx >= 0 ? curIdx : SPR.length - 1;
   $('#g-sprintsel').innerHTML = SPR.map((s, i) => `<option value="${i}">${esc(s.name)}${i === curIdx ? ' (current)' : ''}${s.start ? ' - ' + fmtDate(s.start) : ''}</option>`).join('');

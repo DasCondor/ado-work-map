@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Filter bar: people and tags are multiple choice, a persistent Exclude tags list, a saved default area path, every list narrowed by the other filters (pick an area path and the Epic list shrinks to it), and a search box on lists over 5
+- Sprints: the sprint strip stays in view while scrolling; the sprint map has epic and feature links and a hover list of each cell's stories with links
+- Technical Story is a story type everywhere, and its own kind in the spider web
+- The report uses the full window width
+
 ## 1.1.1
 
 - Fixed: a pinned commit heatmap tooltip on a square low in the grid was cut off by the bottom of the heatmap card. It now opens above the pointer when there's no room below, and the card makes room for very tall ones

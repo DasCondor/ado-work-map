@@ -28,7 +28,7 @@ Want a look first? Run **ADO Work Map: Open Demo Report** from the Command Palet
 | **Maps** | Treemap by % done, a repo matrix, and a commit heatmap |
 | **Spider web** | Work items, links, pull requests, branches, commits and repos as a graph |
 
-A filter bar (search, epic, person, area, tag) applies to every tab, with light and dark themes.
+A filter bar (search, epic, people, area path with a saved default, tags to include and exclude - each list narrowed by the others, with a search box) applies to every tab, with light and dark themes.
 
 ![Sprints](https://raw.githubusercontent.com/DasCondor/ado-work-map/main/docs/images/sprints.png)
 

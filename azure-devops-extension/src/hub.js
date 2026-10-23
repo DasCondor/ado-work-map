@@ -9,11 +9,11 @@
 import * as SDK from './sdk/SDK.min.js';
 
 const API = '7.1';
-const DEFAULT_TYPES = ['Epic', 'Feature', 'User Story', 'Product Backlog Item', 'Requirement', 'Bug', 'Task'];
-const STORY_TYPES = ['User Story', 'Product Backlog Item', 'Requirement'];
-const LEVELS = {Epic: 0, Feature: 1, 'User Story': 2, 'Product Backlog Item': 2, Requirement: 2, Bug: 2, Task: 3};
+const DEFAULT_TYPES = ['Epic', 'Feature', 'User Story', 'Technical Story', 'Product Backlog Item', 'Requirement', 'Bug', 'Task'];
+const STORY_TYPES = ['User Story', 'Technical Story', 'Product Backlog Item', 'Requirement'];
+const LEVELS = {Epic: 0, Feature: 1, 'User Story': 2, 'Technical Story': 2, 'Product Backlog Item': 2, Requirement: 2, Bug: 2, Task: 3};
 const TYPE_COLORS = {
-  Epic: '#e06c00', Feature: '#773b93', Story: '#009ccc', Bug: '#cc293d', Task: '#c99a06', Other: '#8a8a8a',
+  Epic: '#e06c00', Feature: '#773b93', Story: '#009ccc', Tech: '#2a9d8f', Bug: '#cc293d', Task: '#c99a06', Other: '#8a8a8a',
   Repo: '#475569', PR: '#0d9488', Commit: '#94a3b8', Branch: '#2563eb', Build: '#a16207'
 };
 const CACHE_FIELDS = ['System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
@@ -448,7 +448,7 @@ function bucket(cat, state) {
   if (['new', 'proposed', 'to do', 'approved'].includes(s)) return 'new';
   return 'active';
 }
-const wiKind = t => STORY_TYPES.includes(t) ? 'Story' : ['Epic', 'Feature', 'Bug', 'Task'].includes(t) ? t : 'Other';
+const wiKind = t => t === 'Technical Story' ? 'Tech' : STORY_TYPES.includes(t) ? 'Story' : ['Epic', 'Feature', 'Bug', 'Task'].includes(t) ? t : 'Other';
 const short = (s, max) => s.length > max ? s.slice(0, max) + '\u2026' : s;
 
 // vstfs:///Git/Commit/{proj}%2F{repo}%2F{sha}
