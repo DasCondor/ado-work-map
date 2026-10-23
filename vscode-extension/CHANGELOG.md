@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2
+
+- Commit heatmap: Top repos and Top people moved above the heatmap
+- Sprint detail: By person spans the full width above the sprint's work
+- Sprint map: Expand all / Collapse all
+
 ## 1.4.1
 
 - Filter bar: people and tags are multiple choice, a persistent Exclude tags list, a saved default area path, every list narrowed by the other filters (pick an area path and the Epic list shrinks to it), and a search box on lists over 5

@@ -42,6 +42,8 @@ a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 .adonav .ni.open{font-weight:600}
 .adonav .sub-ni{display:flex;flex-direction:column;margin:0 0 4px 30px}
 .adonav .sub-ni a{padding:5px 8px}
+.adonav .sub-ni.shut{display:none}
+.navmin .adonav .sub-ni.fly{display:flex;position:fixed;left:56px;z-index:20;margin:0;min-width:190px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 .adonav .sub-ni a.on{background:var(--sel);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
 .adonav .navtoggle{background:none;border:0;font:inherit;color:var(--muted);cursor:pointer;text-align:left;border-radius:4px}
 .shell.navmin{grid-template-columns:52px minmax(0,1fr)}
@@ -103,7 +105,7 @@ a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 <nav class="adonav">
   <div class="proj"><span class="ptile">P</span><b>Phoenix</b><span class="plus">+</span></div>
   <a class="ni" data-mock="Overview"><svg class="ic"><use href="#i-overview"/></svg>Overview</a>
-  <a class="ni open" data-mock=""><svg class="ic"><use href="#i-boards"/></svg>Boards</a>
+  <a class="ni open" id="boardsni" href="#" aria-expanded="true"><svg class="ic"><use href="#i-boards"/></svg>Boards</a>
   <div class="sub-ni">
     <a data-mock="Work items">Work items</a><a data-mock="Boards">Boards</a><a data-mock="Backlogs">Backlogs</a><a data-mock="Sprints">Sprints</a>
     <a data-mock="Queries">Queries</a><a data-mock="Delivery Plans">Delivery Plans</a><a href="sprint-planning.html" data-hub="plan">Sprint planning</a><a href="index.html" data-hub="map">Work Map</a>
@@ -150,13 +152,20 @@ history.replaceState({hub: START}, '', location.href);
 // load the other hub quietly once this one is up, so the first switch is instant too
 $('#hub-' + START).addEventListener('load', () => setTimeout(() => load(START === 'map' ? 'plan' : 'map'), 300), {once: true});
 window.addEventListener('popstate', e => showHub((e.state && e.state.hub) || (/sprint-planning/.test(location.pathname) ? 'plan' : 'map'), false));
-document.addEventListener('click', e => { const a = e.target.closest('.sub-ni a[data-hub]'); if (!a) return; e.preventDefault(); showHub(a.dataset.hub, true); });
+document.addEventListener('click', e => { const a = e.target.closest('.sub-ni a[data-hub]'); if (!a) return; e.preventDefault(); $('.sub-ni').classList.remove('fly'); showHub(a.dataset.hub, true); });
+// Boards opens its pages: folds the list under it, or shows them beside it when the navigation is collapsed
+$('#boardsni').onclick = e => { e.preventDefault(); const s = $('.sub-ni');
+  if ($('.shell').classList.contains('navmin')) { s.style.top = e.currentTarget.getBoundingClientRect().top + 'px'; s.classList.toggle('fly'); }
+  else s.classList.toggle('shut');
+  $('#boardsni').setAttribute('aria-expanded', String(s.classList.contains('fly') || !s.classList.contains('shut') && !$('.shell').classList.contains('navmin'))); };
+document.addEventListener('click', e => { if (!e.target.closest('#boardsni, .sub-ni')) $('.sub-ni').classList.remove('fly'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('.sub-ni').classList.remove('fly'); });
 const toast = msg => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); };
 document.addEventListener('click', e => { const m = e.target.closest('[data-mock]'); if (!m) return; e.preventDefault();
   if (m.dataset.mock) toast(`${m.dataset.mock} isn't part of this demo - only the Work Map and Sprint planning hubs are.`); });
 // Collapsible navigation, shared with the sprint planning demo
 function setNav(min) {
-  $('.shell').classList.toggle('navmin', min);
+  $('.shell').classList.toggle('navmin', min); $('.sub-ni').classList.remove('fly');
   $('#navtoggle').innerHTML = min ? '<svg class="ic"><use href="#i-expand"/></svg>Expand' : '<svg class="ic"><use href="#i-collapse"/></svg>Collapse';
   $('#navtoggle').title = min ? 'Expand the navigation' : 'Collapse the navigation';
   try { localStorage.setItem('adomap.planning.nav', min ? 'min' : ''); } catch (e) {}

@@ -1269,7 +1269,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 .sp:hover{background:var(--hover)} .sp.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .sp.tf-current b::after{content:" \2022 now";color:var(--accent);font-size:11px}
 .sp.tf-past{opacity:.85}
-.sgrid{display:grid;grid-template-columns:330px 1fr;gap:12px;align-items:start}
+.sgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
 .smap{position:relative;overflow:auto;max-height:calc(100vh - 220px)}
 #smtip{pointer-events:auto;line-height:1.7;white-space:normal;max-width:460px;max-height:320px;overflow:auto;z-index:4}
 #smtip .badge{margin-right:4px}
@@ -1835,7 +1835,7 @@ function renderSprintMap() {
   const c = curIdx >= 0 ? curIdx : SPR.length - 1;
   const lo = smapAll ? 0 : Math.max(0, c - 6), hi = smapAll ? SPR.length - 1 : Math.min(SPR.length - 1, c + 6);
   const cols = []; for (let i = lo; i <= hi; i++) cols.push(i); cols.push(-1);
-  $('#sinfo').innerHTML = `Stories and bugs per sprint, done / total &middot; <a href="#" id="smapAll">${smapAll ? 'Show 6 sprints either side of now' : 'Show all ' + SPR.length + ' sprints'}</a>`;
+  $('#sinfo').innerHTML = `Stories and bugs per sprint, done / total &middot; <a href="#" id="smapAll">${smapAll ? 'Show 6 sprints either side of now' : 'Show all ' + SPR.length + ' sprints'}</a> &middot; <a href="#" id="smapOpen">Expand all</a> &middot; <a href="#" id="smapShut">Collapse all</a>`;
   const ea = new Map(), fa = new Map(), feats = new Map();
   D.items.forEach(it => { if (it.level < 2 || it.type === 'Task' || it.bucket === 'removed' || !pass(it)) return;
     const ek = it.epic == null ? 'none' : it.epic, fk = it.feature == null ? 'none:' + ek : it.feature, col = it.sp;
@@ -1856,6 +1856,8 @@ function renderSprintMap() {
     <tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="sub">Nothing in these sprints matches the filters.</td></tr>`}</tbody></table><div class="gtip" id="smtip" hidden></div></div>
     <p class="sub">Click an epic to open its features; click a sprint heading to open that sprint. Hover a cell to see its stories.</p>`;
   $('#smapAll').onclick = e => { e.preventDefault(); smapAll = !smapAll; renderSprintMap(); };
+  $('#smapOpen').onclick = e => { e.preventDefault(); epicKeys.forEach(k => smapOpen.add(String(k))); renderSprintMap(); };
+  $('#smapShut').onclick = e => { e.preventDefault(); smapOpen.clear(); renderSprintMap(); };
   const card = $('#sbody .smap');
   card.onclick = e => { if (e.target.closest('a')) return;
     const th = e.target.closest('th[data-i]'); if (th) { selSprint = +th.dataset.i; sprintView = 'detail'; renderSprints(); return; }
@@ -2228,14 +2230,14 @@ function renderHeatmap() {
       <div class="kpi"><span class="sub">Per active day</span><b>${active ? (total / active).toFixed(1) : 0}</b></div>
       <div class="kpi"><span class="sub">People</span><b>${byWho.size}</b></div>
     </div>
-    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
-      `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${spDays ? W * 1.6 : W * 1.25}px;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
-      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
-      <div class="gtip" id="hmtip" hidden></div></div>
     <div class="two" style="margin-top:12px">
       <div class="card"><h3>Top repos</h3><table><tbody>${top(byRepo, rname)}</tbody></table></div>
       <div class="card"><h3>Top people</h3><table><tbody>${top(byWho, a => a, true)}</tbody></table><div class="sub" style="margin-top:6px">Click a person to show only them. Names and email accounts that belong to one person (e.g. First.Last.CTR) are counted together.</div></div>
-    </div>`;
+    </div>
+    <div class="card" id="hm" style="margin-top:12px;overflow-x:auto">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
+      `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${spDays ? W * 1.6 : W * 1.25}px;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
+      <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
+      <div class="gtip" id="hmtip" hidden></div></div>`;
   segSet('#hmView', 'v', hmView);
   $$('#hmView button').forEach(b => b.onclick = () => { hmView = b.dataset.v; store.set('hmView', hmView); renderHeatmap(); });
   $('#hmRepo').onchange = e => { hmRepo = e.target.value; renderHeatmap(); };
