@@ -25,6 +25,19 @@ in an interactive page you can open in any browser.
 
 ---
 
+## Latest updates
+
+### 1.1.0 &mdash; maps by sprint, commit heatmap by person
+
+- **Every map can show one sprint.** Pick a sprint above the treemap, repo matrix or commit heatmap (or click **Current sprint**). A banner shows which sprint, its dates and **Previous / Next** buttons.
+- **Commit heatmap by person.** Switch between **Everyone** and **By person**:
+  - **All sprints:** each person gets their own day-by-day calendar.
+  - **One sprint:** one large square per day, with weekends shaded and days still to come dashed.
+- **Tooltips on every square.** Hover for the date, the number of commits, and the people and repos involved. **Click** a square to pin it, with links to those commits in Azure DevOps.
+- **One person, one row.** Commits under different names or accounts, such as `First Last` and `First.Last.CTR`, are counted as one person. Commit data now keeps the part of the email before the @ (never the full address) for this. Run a full refresh to add it to days pulled before this update.
+
+Downloads: [release 1.1.0](https://github.com/DasCondor/ado-work-map/releases/tag/v1.1.0) (VS Code and Azure DevOps extensions). Full history: [releases](https://github.com/DasCondor/ado-work-map/releases) and the [VS Code extension changelog](vscode-extension/CHANGELOG.md).
+
 ## Why
 
 - **Nothing to install.** Runs on the Windows PowerShell 5.1 that ships with Windows 10 and 11. No modules, no admin rights.
@@ -36,6 +49,7 @@ in an interactive page you can open in any browser.
 
 ## Contents
 
+- [Latest updates](#latest-updates)
 - [What's in the report](#whats-in-the-report)
 - [Quick start](#quick-start)
 - [VS Code extension](#vs-code-extension)
