@@ -27,6 +27,13 @@ in an interactive page you can open in any browser.
 
 ## Latest updates
 
+### 1.4.6 &mdash; Commit heatmap uses the whole page
+
+- **Commit heatmap fills the page:** the heatmap scales to the full width of its column (up to twice its normal size), with Top repos and Top people in a narrower column beside it.
+- **By person, all sprints:** on wide screens the calendars sit side by side, so a team takes a few rows instead of one long column.
+- Resizing the window redraws the maps for the new width.
+- VS Code extension 1.4.6 bundles this script; the Azure DevOps extension is 1.4.6 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
+
 ### 1.4.5 &mdash; A spread-out, readable spider web
 
 - **Spider web, spread out:** more room between items and a margin around every label, so nothing overlaps. Each story keeps its tasks close, while repos and related links pull only gently, so groups stay apart instead of forming one knot.

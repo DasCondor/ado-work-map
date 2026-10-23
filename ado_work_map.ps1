@@ -1278,7 +1278,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
   #sprints.det .sp-people{grid-area:1/2/4/3;align-self:stretch;contain:size;overflow:auto;margin:0}
   #sprints.det .sp-work{grid-area:4/1/5/3}
 }
-.hmwrap{display:grid;grid-template-columns:minmax(0,max-content) minmax(280px,1fr);gap:12px;align-items:start;margin-top:12px}
+.hmwrap{display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,24%,400px);gap:12px;align-items:start;margin-top:12px}
 .hmwrap #hm{min-width:0;overflow-x:auto}
 .hmside{display:flex;flex-direction:column;gap:12px;min-width:0}
 @media (max-width:1100px){.hmwrap{grid-template-columns:minmax(0,1fr)}}
@@ -2189,19 +2189,21 @@ function renderHeatmap() {
   }
   else if (byPerson) {
     // Last 52 weeks, one day-by-day calendar per person (same scale for everyone, so they compare)
-    const cs = 11, gap = 3, L = 30, weeks = 53, block = 7 * (cs + gap) + 40;
+    const cs = 11, gap = 3, L = 30, weeks = 53, block = 7 * (cs + gap) + 40, bw = L + weeks * (cs + gap), colGap = 40;
     const lvl = levelOf(Math.max(1, ...byWhoDay.values()));
-    W = L + weeks * (cs + gap); H = Math.max(1, shownPeople.length) * block;
-    shownPeople.forEach((p, r) => {
-      const T = r * block + 38;
-      svg += `<text class="hl" x="0" y="${T - 22}">${esc(p)} &middot; ${(byWho.get(p) || 0).toLocaleString()} commits</text>`;
+    const mb = $('#mbody').clientWidth || 0, room = mb - (innerWidth > 1100 ? Math.min(400, Math.max(300, mb * .24)) + 12 : 0) - 26;
+    const cols = Math.max(1, Math.min(shownPeople.length, Math.floor((room + colGap) / ((bw + colGap) * .9))));
+    W = cols * bw + (cols - 1) * colGap; H = Math.max(1, Math.ceil(shownPeople.length / cols)) * block;
+    shownPeople.forEach((p, i) => {
+      const T = Math.floor(i / cols) * block + 38, X = (i % cols) * (bw + colGap);
+      svg += `<g transform="translate(${X} 0)"><text class="hl" x="0" y="${T - 22}">${esc(p)} &middot; ${(byWho.get(p) || 0).toLocaleString()} commits</text>`;
       for (let w = 0; w < weeks; w++) for (let k = 0; k < 7; k++) {
         const dt = new Date(from.getTime() + (w * 7 + k) * day); if (dt > today) continue;
         const key = iso(dt), n = byWhoDay.get(p + '|' + key) || 0;
         if (k === 0 && dt.getUTCDate() <= 7) svg += `<text class="wk" x="${L + w * (cs + gap)}" y="${T - 5}">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</text>`;
         svg += cell(L + w * (cs + gap), T + k * (cs + gap), cs, n, lvl(n), key, key, p);
       }
-      svg += [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text class="wk" x="0" y="${T + k * (cs + gap) + 9}">${t}</text>`).join('');
+      svg += [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([k, t]) => `<text class="wk" x="0" y="${T + k * (cs + gap) + 9}">${t}</text>`).join('') + '</g>';
     });
   }
   else {
@@ -2243,7 +2245,7 @@ function renderHeatmap() {
     </div>
     <div class="hmwrap">
     <div class="card" id="hm">${(byPerson && !shownPeople.length) ? '<p class="sub">No commits in this range.</p>' :
-      `<svg viewBox="0 0 ${W} ${H}" style="width:${spDays ? W * 1.6 : W * 1.25}px;max-width:100%;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
+      `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W * 2}px;min-width:${Math.min(W, 1400)}px">${svg}</svg>`}
       <div class="legend" style="justify-content:flex-end;padding:0 6px">Less ${legend} More &middot; hover a square for details</div>
       <div class="gtip" id="hmtip" hidden></div></div>
     <div class="hmside">
@@ -2326,6 +2328,9 @@ function renderAll() {
   if (activeTab === 'maps') renderMaps();
   if (window.graphApi) graphApi.redraw();
 }
+// The maps lay themselves out for the page width: redraw them when it changes
+let lastWidth = innerWidth;
+addEventListener('resize', debounce(() => { if (innerWidth === lastWidth) return; lastWidth = innerWidth; if (activeTab === 'maps') renderMaps(); }, 250));
 
 // Theme: Auto follows Windows, or pick Light / Dark. Charts, maps and the graph redraw in the new colours.
 $('#theme').value = document.documentElement.dataset.theme || 'auto';

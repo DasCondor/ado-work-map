@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.6
+
+- Commit heatmap scales to the width of its column, with Top repos and Top people in a narrower column beside it
+- By person over all sprints: calendars side by side on wide screens
+- The maps redraw when the window width changes
+
 ## 1.4.5
 
 - Spider web: more room between items and around labels, story-and-task groups kept together, gentler pulls from repos and related links
