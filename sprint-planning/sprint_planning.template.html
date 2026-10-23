@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="Live demo: sprint planning for the ADO Work Map Azure DevOps extension - capacity, planning poker, swimlanes and a sprint calendar. Sample data, runs only in your browser.">
+<title>Sprint planning - ADO Work Map live demo</title>
+<script>
+(function () { let t = 'auto'; try { t = JSON.parse(localStorage.getItem('adomap.theme') || '"auto"'); } catch (e) {}
+  if (t !== 'auto') document.documentElement.dataset.theme = t; })();
+</script>
+<style>
+:root{--bg:#f8f8f8;--panel:#fff;--text:#201f1e;--muted:#605e5c;--line:#e1dfdd;--hover:#f3f2f1;--sel:#deecf9;--accent:#0078d4;
+  --done:#107c10;--warn:#c27c00;--bad:#d13438;--ok:#107c10;--new:#a19f9d;--stripe:rgba(0,120,212,.35)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1b1a19;--panel:#252423;--text:#f3f2f1;--muted:#c8c6c4;--line:#3b3a39;
+  --hover:#323130;--sel:#0f3a5e;--accent:#479ef5;--done:#54b054;--warn:#f2c661;--bad:#f1707b;--ok:#54b054;--new:#797775;--stripe:rgba(71,158,245,.4);color-scheme:dark}}
+:root[data-theme=dark]{--bg:#1b1a19;--panel:#252423;--text:#f3f2f1;--muted:#c8c6c4;--line:#3b3a39;--hover:#323130;--sel:#0f3a5e;--accent:#479ef5;
+  --done:#54b054;--warn:#f2c661;--bad:#f1707b;--ok:#54b054;--new:#797775;--stripe:rgba(71,158,245,.4);color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+button{font:inherit}
+/* Azure DevOps-style frame (mock) */
+html,body{height:100%}
+body{overflow:hidden}
+.shell{display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto 48px minmax(0,1fr);height:100vh}
+.notice{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;padding:6px 14px;font-size:12.5px;background:color-mix(in srgb,var(--accent) 14%,var(--panel));border-bottom:1px solid var(--line)}
+.notice b{color:var(--accent)} .notice a{font-weight:600} .notice .sep{color:var(--muted)}
+.adoh{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:13px}
+.adoh .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.adoh .logo{width:20px;height:20px;border-radius:4px;background:linear-gradient(135deg,#0078d4,#4f9fe0)}
+.adoh .crumbs{color:var(--muted)} .adoh .crumbs b{color:var(--text);font-weight:400}
+.adoh .search{border:1px solid var(--line);border-radius:4px;padding:4px 10px;color:var(--muted);min-width:220px;background:var(--bg)}
+.adoh .hicon{width:30px;height:30px;display:grid;place-items:center;border-radius:4px;color:var(--muted);cursor:default}
+.adoh .hicon:hover{background:var(--hover)}
+.adonav{background:var(--hover);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:8px 6px;gap:1px;overflow:auto;font-size:13.5px}
+.adonav .proj{display:flex;align-items:center;gap:8px;padding:6px 8px 10px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.adonav .ptile{width:28px;height:28px;border-radius:4px;background:#8764b8;color:#fff;display:grid;place-items:center;font-weight:700}
+.adonav .plus{margin-left:auto;color:var(--muted)}
+.adonav a{color:var(--text);text-decoration:none;cursor:pointer;border-radius:4px}
+.adonav .ni{display:flex;align-items:center;gap:10px;padding:7px 8px}
+.adonav .ni:hover,.adonav .sub-ni a:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.adonav .ic{width:20px;height:20px;border-radius:4px;background:var(--c);color:#fff;display:grid;place-items:center;font-size:11px}
+.adonav .ni.open{font-weight:600}
+.adonav .sub-ni{display:flex;flex-direction:column;margin:0 0 4px 30px}
+.adonav .sub-ni a{padding:5px 8px}
+.adonav .sub-ni a.on{background:var(--sel);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
+.adonav .grow{flex:1}
+.hub{overflow:auto;background:var(--bg)}
+.adoh button.hicon{background:none;border:0;font:inherit;cursor:pointer}
+.adonav .navtoggle{background:none;border:0;font:inherit;color:var(--muted);cursor:pointer;text-align:left;border-radius:4px}
+.shell{transition:grid-template-columns .15s}
+.shell.navmin{grid-template-columns:52px minmax(0,1fr)}
+.navmin .adonav{padding:8px 4px;overflow:visible}
+.navmin .adonav .ni{font-size:0;justify-content:center;padding:7px 0;gap:0}
+.navmin .adonav .ni .ic{font-size:11px}
+.navmin .adonav .sub-ni,.navmin .adonav .proj b,.navmin .adonav .plus{display:none}
+.navmin .adonav .proj{justify-content:center;padding:6px 0 10px}
+.navmin .adonav .ni.open .ic{box-shadow:0 0 0 2px var(--accent)}
+@media (max-width:900px){.shell{grid-template-columns:0 minmax(0,1fr)}.adonav{display:none}.adoh .search{display:none}}
+.demo{font-size:11px;font-weight:600;padding:1px 8px;border-radius:9px;background:#c27c00;color:#fff;margin-left:6px}
+.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 20px 0}
+h1{font-size:20px;margin:0;font-weight:600} h2{font-size:15px;margin:0 0 8px} h3{font-size:13px;margin:0 0 6px}
+.sub{color:var(--muted);font-size:12px}
+select,input{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px 8px;font:inherit;font-size:13px}
+.btn{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:6px 12px;cursor:pointer;font-size:13px}
+.btn:hover{background:var(--hover)} .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff} .btn:disabled{opacity:.45;cursor:default}
+.grow{flex:1}
+/* meeting bar: agenda steps, timer, team */
+.meet{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:12px 20px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.steps{display:flex;gap:4px;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:16px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;font-size:13px}
+.step .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--hover)}
+.step.on{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 1px var(--accent)} .step.on .n{background:var(--accent);color:#fff}
+.step.done .n{background:var(--ok);color:#fff}
+.timer{font:600 20px/1 ui-monospace,Consolas,monospace;padding:6px 10px;border-radius:6px;background:var(--hover);min-width:84px;text-align:center}
+.timer.late{background:var(--bad);color:#fff}
+.team{display:flex;gap:6px;align-items:center}
+.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;background:var(--c,#605e5c);position:relative;flex:0 0 auto}
+.av.sm{width:22px;height:22px;font-size:9px}
+.av .ok{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;background:var(--ok);color:#fff;font-size:9px;display:grid;place-items:center;border:2px solid var(--panel)}
+main{padding:0 20px 30px;max-width:1700px;margin:0 auto}
+section.view{display:none} section.view.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:6px;padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.kpi b{font-size:20px} .kpi.ok{border-left-color:var(--ok)} .kpi.warn{border-left-color:var(--warn)} .kpi.bad{border-left-color:var(--bad)}
+.intro{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
+.intro .big{font-size:26px;line-height:1}
+/* capacity grid */
+.capgrid{overflow-x:auto}
+.capgrid table{border-collapse:collapse;width:100%}
+.capgrid th,.capgrid td{padding:4px 5px;border-bottom:1px solid var(--line);text-align:center;font-size:12.5px;white-space:nowrap}
+.capgrid th:first-child,.capgrid td:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:1}
+.capgrid td.wk{background:var(--hover)}
+.off{width:46px;padding:3px 1px;font-size:11.5px;text-align:center}
+.capgrid th.wkh{font-size:12px;font-weight:600;color:var(--text);border-left:2px solid var(--line);background:var(--hover)}
+.capgrid .ws{border-left:2px solid var(--line)}
+.capgrid td.wt{background:var(--hover)}
+.wkbtn{min-width:46px;padding:3px 6px;border-radius:4px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;font-size:12px;font-variant-numeric:tabular-nums}
+.wkbtn:hover{border-color:var(--accent)} .wkbtn.zero{background:color-mix(in srgb,var(--bad) 25%,var(--panel));text-decoration:line-through}
+.capgrid.long .off{width:40px}
+.off.part{background:color-mix(in srgb,var(--warn) 22%,var(--panel))} .off.full{background:color-mix(in srgb,var(--bad) 25%,var(--panel))}
+.hpd{width:52px}
+.bar{position:relative;height:10px;border-radius:5px;background:var(--line);overflow:hidden;min-width:120px}
+.bar i{position:absolute;top:0;bottom:0;border-radius:0}
+.bar i.est{background:repeating-linear-gradient(45deg,var(--stripe) 0 4px,transparent 4px 8px)}
+.bar .cap{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend span::before{content:"";display:inline-block;width:12px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px;background:var(--c)}
+/* board */
+.cols{display:grid;grid-template-columns:330px minmax(0,1fr) 320px;gap:12px;align-items:start}
+.list{max-height:calc(100vh - 330px);overflow:auto;display:flex;flex-direction:column;gap:6px}
+.grp{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 2px 2px}
+.wi{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c,#009ccc);border-radius:4px;padding:6px 8px;cursor:grab}
+.wi:hover{background:var(--hover)} .wi.dragging{opacity:.4}
+.wi .id{font-size:12px;font-weight:600;color:var(--accent)} .wi .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wi .meta{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--muted)}
+.pts{font-size:11px;font-weight:700;min-width:22px;text-align:center;padding:0 6px;border-radius:9px;background:var(--hover);border:1px solid var(--line)}
+.pts.none{color:var(--warn);border-color:var(--warn)}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;border:1px solid var(--line)}
+.tag.warn{color:var(--warn);border-color:var(--warn)} .tag.bad{color:var(--bad);border-color:var(--bad)} .tag.new{color:var(--accent);border-color:var(--accent)}
+.act{background:none;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:0 2px} .act:hover{color:var(--accent)}
+.lane{border:1px dashed transparent;border-radius:8px;padding:8px;margin-bottom:8px;background:var(--bg)}
+.lane.over{border-color:var(--accent);background:var(--sel)}
+.lhead{display:grid;grid-template-columns:32px 1fr auto;gap:4px 10px;align-items:center;margin-bottom:8px}
+.lhead .bar{grid-column:2/-1}
+.lcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px;min-height:34px}
+.empty{font-size:12px;color:var(--muted);padding:8px;border:1px dashed var(--line);border-radius:6px;text-align:center}
+.check{display:grid;grid-template-columns:14px 1fr;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line)}
+.check:last-child{border-bottom:0} .dot{width:10px;height:10px;border-radius:50%;margin-top:4px;background:var(--c)}
+.fit{height:16px;border-radius:8px;background:var(--line);overflow:hidden;position:relative;margin:6px 0 2px}
+.fit i{position:absolute;inset:0 auto 0 0}
+/* swimlanes */
+.swim{overflow:auto;max-height:calc(100vh - 300px)}
+.swim table{border-collapse:separate;border-spacing:0;width:100%}
+.swim th,.swim td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;padding:6px}
+.swim thead th{position:sticky;top:0;z-index:2;background:var(--panel);text-align:left;min-width:240px}
+.swim thead th.tgt{box-shadow:inset 0 -3px 0 var(--accent)}
+.swim th.row{position:sticky;left:0;z-index:1;background:var(--panel);min-width:170px;max-width:220px;text-align:left;font-weight:600}
+.swim thead th.row{z-index:3}
+.swim td.cell{min-width:240px;background:var(--bg)}
+.swim td.cell.over{background:var(--sel);outline:2px dashed var(--accent);outline-offset:-3px}
+.swim td.cell .wi{margin-bottom:5px}
+.swim td.cur{background:color-mix(in srgb,var(--hover) 60%,var(--bg))}
+.colhead{display:flex;flex-direction:column;gap:3px;font-weight:400}
+#swim[hidden],#peopleview[hidden],#swimby[hidden]{display:none}
+.step.on2{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 1px var(--accent)}
+/* sprint calendar */
+.cal{display:grid;grid-template-columns:70px repeat(5,minmax(0,1fr)) 110px;gap:6px;align-items:stretch}
+.cal .wl{font-size:12px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;justify-content:center}
+.cal .dh{font-size:11.5px;font-weight:600;color:var(--muted);text-align:center}
+.cday{border:1px solid var(--line);border-radius:6px;padding:6px 7px;min-height:74px;display:flex;flex-direction:column;gap:3px;
+  background:color-mix(in srgb,var(--done) calc(var(--a) * 22%),var(--panel))}
+.cday.low{background:color-mix(in srgb,var(--warn) 22%,var(--panel))} .cday.none{background:color-mix(in srgb,var(--bad) 18%,var(--panel))}
+.cday.pad{background:transparent;border-style:dashed;opacity:.35}
+.cday.today{box-shadow:0 0 0 2px var(--accent)}
+.cday .dn{display:flex;justify-content:space-between;font-size:12px} .cday .dn b{font-size:14px}
+.cday .hrs{font-size:12px;color:var(--muted)}
+.cday .offs{display:flex;flex-wrap:wrap;gap:3px;margin-top:auto}
+.cday .offs span{font-size:10px;padding:0 5px;border-radius:8px;background:var(--panel);border:1px solid var(--line);white-space:nowrap}
+.cday .mini{height:5px;border-radius:3px;background:var(--line);overflow:hidden} .cday .mini i{display:block;height:100%;background:var(--done)}
+.wsum{border-radius:6px;background:var(--hover);padding:6px 8px;font-size:12px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.wsum b{font-size:15px}
+#cal1 svg,#cal5 svg{width:100%;height:auto;display:block;margin-top:10px} #cal1 svg text,#cal5 svg text{fill:var(--muted);font-size:11px}
+.calhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;margin-bottom:10px}
+@media (max-width:900px){.cal{grid-template-columns:52px repeat(5,minmax(0,1fr))}.wsum{grid-column:2/-1}}
+/* poker */
+.poker{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:12px}
+.story{font-size:16px;font-weight:600;margin:4px 0}
+.voters{display:grid;gap:8px;margin-top:12px}
+.voter{display:grid;grid-template-columns:30px 140px 1fr;gap:10px;align-items:center}
+.deck{display:flex;gap:5px;flex-wrap:wrap}
+.pc{width:38px;height:52px;border-radius:6px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;font-weight:700;cursor:pointer;color:var(--text);transition:transform .15s}
+.pc:hover{transform:translateY(-3px);border-color:var(--accent)} .pc.on{background:var(--accent);color:#fff;border-color:var(--accent);transform:translateY(-4px)}
+.table{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;padding:18px;border-radius:60px;background:color-mix(in srgb,var(--done) 14%,var(--panel));border:1px solid var(--line);min-height:120px;align-items:center}
+.seat{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
+.flip{width:44px;height:62px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:18px;border:1px solid var(--line);background:repeating-linear-gradient(45deg,var(--accent) 0 6px,color-mix(in srgb,var(--accent) 70%,#fff) 6px 12px);color:transparent;transition:transform .4s}
+.flip.up{background:var(--panel);color:var(--text);transform:rotateY(360deg)}
+.flip.empty{background:var(--hover);border-style:dashed}
+.verdict{text-align:center;margin-top:12px;font-size:15px}
+/* story details in poker */
+.sdet{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 14px;margin:10px 0;font-size:12.5px}
+.sdet div span{display:block;font-size:11px;color:var(--muted)}
+.us{font-size:14px;line-height:1.5;margin:8px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--hover);border-radius:0 6px 6px 0}
+.ac{margin:4px 0 0;padding-left:22px} .ac li{margin:4px 0;line-height:1.45}
+.ac li b{color:var(--accent);font-weight:600}
+.sect{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:12px 0 2px}
+.tasks{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px} .tasks span{font-size:12px;padding:2px 8px;border-radius:10px;border:1px solid var(--line);background:var(--panel)}
+.sample{font-size:10.5px;color:var(--warn);margin-left:6px;font-weight:400;text-transform:none;letter-spacing:0}
+/* pop-out */
+.modal{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:24px}
+.modal[hidden]{display:none}
+.mbox{background:var(--panel);color:var(--text);border-radius:12px;max-width:1000px;width:100%;max-height:calc(100vh - 48px);overflow:auto;padding:24px 30px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.mbox h2{font-size:26px;margin:4px 0 10px;line-height:1.25} .mbox .us{font-size:18px} .mbox .ac li{font-size:17px;margin:8px 0}
+.mbox .sdet{font-size:14px} .mbox .sect{font-size:12.5px;margin-top:18px}
+.mtop{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bigpts{font-size:22px;font-weight:700;padding:4px 14px;border-radius:20px;background:var(--hover);border:1px solid var(--line)}
+/* work item form (Azure DevOps style) */
+.mbox.wif{padding:0;max-width:1180px;border-radius:4px;overflow:hidden;display:flex;flex-direction:column}
+.wif-meet{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 14px;background:color-mix(in srgb,var(--accent) 12%,var(--panel));border-bottom:1px solid var(--line);font-size:12.5px}
+.wif-head{border-left:6px solid var(--c);padding:10px 18px 0 16px}
+.wif-type{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted)}
+.wif-type .ico{width:14px;height:14px;border-radius:2px;background:var(--c);display:inline-block}
+.wif-tools{margin-left:auto;display:flex;gap:4px;align-items:center}
+.wif-tools .btn{padding:4px 10px}
+.wif-title{font-size:20px;font-weight:600;margin:6px 0 8px;padding:4px 6px;border:1px solid transparent;border-radius:2px}
+.wif-title:hover{border-color:var(--line)}
+.wif-who{display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:13px;margin-bottom:8px}
+.wif-who .tagadd{color:var(--muted)}
+.wif-fields{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:4px 24px;padding:8px 18px 10px 22px;border-bottom:1px solid var(--line)}
+.wif-f{display:grid;grid-template-columns:72px 1fr;align-items:center;font-size:13px;gap:8px}
+.wif-f span{color:var(--muted);font-size:12.5px}
+.wif-f b{font-weight:400;padding:3px 6px;border:1px solid transparent;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wif-f b:hover{border-color:var(--line)}
+.sdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--sc)}
+.wif-tabs{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--line)}
+.wif-tabs span{padding:8px 12px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+.wif-tabs span.on{color:var(--text);border-color:var(--accent);font-weight:600}
+.wif-body{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:0;overflow:auto}
+.wif-main{padding:14px 18px;border-right:1px solid var(--line)}
+.wif-side{padding:14px 16px;display:flex;flex-direction:column;gap:14px;background:var(--bg)}
+.wif-sec h4{margin:0 0 6px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.wif-sec h4::before{content:"\25BE";color:var(--muted);font-size:11px}
+.wif-rich{font-size:14px;line-height:1.55;padding:8px 10px;border:1px solid var(--line);border-radius:2px;background:var(--panel);min-height:60px}
+.wif-rich ol{margin:0;padding-left:22px} .wif-rich li{margin:4px 0}
+.wif-main .wif-sec+.wif-sec{margin-top:16px}
+.wif-card{background:var(--panel);border:1px solid var(--line);border-radius:2px;padding:10px 12px}
+.wif-kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:13px;align-items:center}
+.wif-kv span{color:var(--muted);font-size:12.5px}
+.wif-kv b{font-weight:400;padding:2px 6px;border:1px solid var(--line);border-radius:2px;background:var(--bg)}
+.wif-kv b.big{font-size:16px;font-weight:600}
+.wif-link{display:grid;grid-template-columns:16px 1fr auto;gap:6px;align-items:center;font-size:12.5px;padding:3px 0}
+.wif-link .ico{width:12px;height:12px;border-radius:2px;background:var(--c)}
+.wif-link .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wif-grp{font-size:11.5px;color:var(--muted);margin:8px 0 2px}
+.wif-add{font-size:12.5px;color:var(--accent)}
+.wif-disc{display:flex;gap:10px;align-items:flex-start}
+.wif-disc .box{flex:1;border:1px solid var(--line);border-radius:2px;padding:8px 10px;color:var(--muted);font-size:13px;background:var(--panel)}
+@media (max-width:900px){.wif-body{grid-template-columns:1fr}.wif-fields{grid-template-columns:1fr 1fr}.wif-main{border-right:0}}
+/* quick task */
+.qt{margin-top:10px;padding:10px;border:1px dashed var(--accent);border-radius:4px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.qt-kinds{display:flex;gap:6px;flex-wrap:wrap}
+.qt-k{padding:4px 10px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;font-size:12.5px}
+.qt-k.on{border-color:var(--accent);background:var(--sel)}
+.qt-title{width:100%}
+.qt-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap} .qt-row .qt-hrs{width:64px} .qt-row select{max-width:150px}
+.qt-note{font-size:11.5px}
+.wif-link .rm{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px} .wif-link .rm:hover{color:var(--bad)}
+.wi .tsk{font-size:11px;border:1px solid var(--line);border-radius:9px;background:none;color:var(--accent);cursor:pointer;padding:0 7px}
+/* confidence */
+.fists{display:grid;gap:10px;max-width:760px}
+.fist{display:grid;grid-template-columns:30px 150px 1fr;gap:10px;align-items:center}
+.f5{display:flex;gap:6px} .f5 button{width:44px;height:40px;border-radius:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-size:18px}
+.f5 button.on{background:var(--accent);border-color:var(--accent)}
+.meter{font-size:40px;font-weight:700;text-align:center}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:30}
+.toast[hidden]{display:none}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:25}
+@media (max-width:1250px){.cols{grid-template-columns:300px 1fr}.cols>.side{grid-column:1/-1}.poker{grid-template-columns:1fr}}
+@media (max-width:820px){.cols{grid-template-columns:1fr}.voter,.fist{grid-template-columns:30px 1fr}.voter .deck,.fist .f5{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="notice"><b>Live demo</b><span>Sprint planning &middot; a preview for the ADO Work Map extension for Azure DevOps</span><span class="sep">&middot;</span>
+  <span>Sample data, runs only in your browser &mdash; nothing is sent anywhere</span><span class="grow"></span>
+  <a href="index.html">Work map demo</a><a href="https://github.com/DasCondor/ado-work-map" target="_blank" rel="noopener noreferrer">GitHub</a>
+  <span class="sub">Not affiliated with Microsoft</span></div>
+<header class="adoh">
+  <span class="brand"><span class="logo"></span>ADO Work Map</span>
+  <span class="crumbs" id="crumb"></span>
+  <span class="grow"></span>
+  <span class="search">&#128269; Search</span>
+  <span class="demo" title="A mock-up of the extension: only this hub works, and it never connects to Azure DevOps">DEMO</span>
+  <button class="hicon" id="navtoggle2" title="Show or hide the navigation">&#9776;</button><span class="hicon" title="Help">?</span><span class="hicon" title="User settings">&#9881;</span>
+  <span class="av sm" style="--c:#8764b8">PO</span>
+</header>
+<nav class="adonav">
+  <div class="proj"><span class="ptile">P</span><b id="navproj">Phoenix</b><span class="plus">+</span></div>
+  <a class="ni" data-mock="Overview"><span class="ic" style="--c:#0078d4">&#9632;</span>Overview</a>
+  <a class="ni open" data-mock=""><span class="ic" style="--c:#009a5f">&#9638;</span>Boards</a>
+  <div class="sub-ni">
+    <a data-mock="Work items">Work items</a><a data-mock="Boards">Boards</a><a data-mock="Backlogs">Backlogs</a><a data-mock="Sprints">Sprints</a>
+    <a data-mock="Queries">Queries</a><a data-mock="Delivery Plans">Delivery Plans</a><a class="on">Sprint planning</a><a href="index.html" title="Open the ADO Work Map live demo">Work Map</a>
+  </div>
+  <a class="ni" data-mock="Repos"><span class="ic" style="--c:#e05a00">&#9670;</span>Repos</a>
+  <a class="ni" data-mock="Pipelines"><span class="ic" style="--c:#0063b1">&#9654;</span>Pipelines</a>
+  <a class="ni" data-mock="Test Plans"><span class="ic" style="--c:#7a3fb3">&#10003;</span>Test Plans</a>
+  <a class="ni" data-mock="Artifacts"><span class="ic" style="--c:#c4314b">&#9679;</span>Artifacts</a>
+  <span class="grow"></span>
+  <a class="ni" data-mock="Project settings"><span class="ic" style="--c:#605e5c">&#9881;</span>Project settings</a>
+  <button class="ni navtoggle" id="navtoggle" title="Collapse the navigation"><span class="ic" style="--c:#605e5c">&laquo;</span>Collapse</button>
+</nav>
+<div class="hub">
+<div class="top">
+  <div><h1 id="title">Sprint planning</h1><div class="sub" id="meta"></div></div>
+  <span class="grow"></span>
+  <label class="sub">Sprint <select id="sprint"></select></label>
+  <label class="sub" title="Demo only: stretch this sprint to see longer sprints. Later sprints move along with it.">Length <select id="splen"><option value="1">1 week</option><option value="2">2 weeks</option><option value="3">3 weeks</option><option value="4">4 weeks</option><option value="5">5 weeks</option></select></label>
+  <button class="btn" id="export">Export changes (CSV)</button>
+  <button class="btn" id="reset">Start over</button>
+  <label class="sub">Theme <select id="theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+</div>
+<div class="meet">
+  <div class="steps" id="steps"></div>
+  <span class="grow"></span>
+  <div class="team" id="team" title="Who's ready for the next step - click someone to tick them"></div>
+  <div class="timer" id="timer" title="Time left for this step">--:--</div>
+  <button class="btn" id="tgo">Start</button>
+  <button class="btn primary" id="next">Next step &rsaquo;</button>
+</div>
+<main>
+  <div class="kpis" id="kpis"></div>
+
+  <section class="view" id="v-capacity">
+    <div class="intro"><span class="big">&#128197;</span><div><h2>1. Capacity check-in</h2><div class="sub">Everyone sets their hours per day and any time off in this sprint &mdash; a full day, half a day, or a few hours. Team-wide days off (holidays) apply to everyone. Capacity is what's left.</div></div></div>
+    <div class="card capgrid" id="capgrid"></div>
+    <div class="legend"><span style="--c:var(--accent)">Assigned work (task hours)</span><span style="--c:var(--stripe)">Estimated from points (no tasks yet)</span><span style="--c:var(--text)">Capacity line</span></div>
+    <div class="card" id="cal1" style="margin-top:12px"></div>
+  </section>
+
+  <section class="view" id="v-carry">
+    <div class="intro"><span class="big">&#128260;</span><div><h2>2. Carry over</h2><div class="sub">What didn't finish last sprint? Pick what comes along &mdash; its remaining task hours count against capacity straight away.</div></div></div>
+    <div class="card" id="carrybody"></div>
+  </section>
+
+  <section class="view" id="v-poker">
+    <div class="intro"><span class="big">&#127183;</span><div><h2>3. Planning poker</h2><div class="sub">Everyone picks a card in secret, then reveal. Close votes become the estimate; far-apart votes mean talk it through and vote again. Items without an estimate come first.</div></div></div>
+    <div class="poker">
+      <div class="card" id="pokerbody"></div>
+      <div class="card"><h3>Up next</h3><div class="list" id="queue" style="max-height:520px"></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-board">
+    <div class="intro"><span class="big">&#129513;</span><div><h2>4. Fill the sprint</h2><div class="sub">Drag stories from the backlog onto a person (or use +). Their tasks come along; each lane shows assigned work against that person's capacity.</div></div></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <div class="steps" id="bview"><button class="step" data-bv="people">People lanes</button><button class="step" data-bv="swim">Swimlanes: backlog &times; sprints</button></div>
+      <label class="sub" id="swimby">Rows <select id="swimrows"><option value="feature">Feature</option><option value="epic">Epic</option><option value="person">Person</option></select></label>
+    </div>
+    <div class="card" id="swim" hidden></div>
+    <div class="cols" id="peopleview">
+      <section class="card"><h3>Backlog</h3>
+        <div style="display:flex;gap:6px;margin-bottom:8px"><input type="search" id="q" placeholder="Search title or #id" style="flex:1;min-width:0"><select id="group"><option value="feature">By feature</option><option value="epic">By epic</option></select></div>
+        <div class="list" id="backlog"></div></section>
+      <section class="card" id="lanes"></section>
+      <div class="side" style="display:flex;flex-direction:column;gap:12px">
+        <section class="card"><h3>Sprint fit</h3><div id="fit"></div></section>
+        <section class="card"><h3>Checks</h3><div id="checks"></div></section>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-commit">
+    <div class="intro"><span class="big">&#9995;</span><div><h2>5. Confidence vote</h2><div class="sub">Fist of five: how confident is each of you that the team can finish this plan? 1 = no way, 5 = easy. An average of 3.5 or more and you're committed.</div></div></div>
+    <div class="poker"><div class="card fists" id="fists"></div><div class="card" id="verdict"></div></div>
+    <div class="card" id="cal5" style="margin-top:12px"></div>
+  </section>
+</main>
+</div></div>
+<div class="modal" id="modal" hidden><div class="mbox" id="mbox" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+<canvas id="confetti"></canvas>
+<script>
+const D = __DATA__;
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const KEY = 'adomap.planning2.' + D.project;
+const load = (k, d) => { try { const v = localStorage.getItem(KEY + '.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const save = (k, v) => { try { localStorage.setItem(KEY + '.' + k, JSON.stringify(v)); } catch (e) {} };
+const toast = msg => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); };
+const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, {month: 'short', day: 'numeric', timeZone: 'UTC'}) : '';
+const h1 = n => (Math.round(n * 10) / 10).toLocaleString();
+
+// ---------- data ----------
+const byId = new Map(D.items.map(i => [i.id, i]));
+const SPR = D.sprints;
+const spIdx = it => { let p = (it.iteration || '').toLowerCase();
+  for (;;) { const i = SPR.findIndex(s => s.path.toLowerCase() === p); if (i >= 0) return i; const k = p.lastIndexOf('\\'); if (k < 0) return -1; p = p.slice(0, k); } };
+const ancestor = (it, level) => { let a = it; while (a && a.level > level) a = byId.get(a.parent); return a && a.level === level ? a : null; };
+const isStory = it => ['User Story', 'Product Backlog Item', 'Requirement', 'Bug'].includes(it.type);
+
+// Extra sample backlog items (with tasks) so the demo has plenty to plan; seeded so they're the same every time
+(function addSamples() {
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const features = D.items.filter(i => i.type === 'Feature');
+  const people = [...new Set(D.items.map(i => i.assignee).filter(Boolean))];
+  const titles = ['Export invoices to PDF', 'Remember last search filters', 'Rate-limit login attempts', 'Bulk edit user roles', 'Show delivery ETA on order page',
+    'Accessible colour contrast pass', 'Retry failed webhook deliveries', 'Audit log for admin changes', 'Offline mode for field app', 'Cache product images at edge',
+    'Two-step sign-in for admins', 'Paginate order history', 'Fix timezone on receipts', 'Health check endpoint for payments', 'Dark mode for the portal', 'Import contacts from CSV',
+    'Saved payment methods', 'Order status email updates', 'Search by order number', 'Self-service password reset', 'Usage dashboard for admins', 'Invite users by email',
+    'Archive old projects', 'Download account data', 'Session timeout warning', 'Inline form validation', 'Keyboard shortcuts for agents', 'Ticket priority rules',
+    'Canned replies for support', 'SLA timer on tickets', 'Merge duplicate customers', 'Address autocomplete', 'Split shipments', 'Refund to original card',
+    'Tax rates by region', 'Low stock alerts', 'Barcode scan in field app', 'Photo upload on job report', 'Sign-off signature capture', 'Route map for technicians',
+    'Daily summary report', 'Scheduled CSV exports', 'API keys per integration', 'Webhook signing secrets', 'Role-based menu visibility', 'Read-only auditor role',
+    'Faster product search', 'Lazy-load order images', 'Database index for reports', 'Remove legacy checkout code'];
+  const taskNames = ['Design', 'Build API', 'Build UI', 'Write tests', 'Docs and review'];
+  let id = 9000, tid = 9500;
+  titles.forEach((title, n) => {
+    const f = features[n % features.length], bug = n === 12, who = rnd() < .2 ? '' : people[Math.floor(rnd() * people.length)];
+    const st = {id: id++, type: bug ? 'Bug' : 'User Story', kind: bug ? 'Bug' : 'Story', level: 2, title, state: 'New', bucket: 'new', assignee: who,
+      iteration: D.project, area: f.area, tags: '', points: [3, 6, 9, 14].includes(n) ? null : [1, 2, 3, 3, 5, 5, 8][Math.floor(rnd() * 7)],
+      parent: f.id, children: [], url: '#', sample: true};
+    D.items.push(st); byId.set(st.id, st); f.children.push(st.id);
+    if (n % 4 === 3) return;   // some stories have no tasks yet: their work is estimated from points
+    const k = 1 + Math.floor(rnd() * 3);
+    for (let t = 0; t < k; t++) {
+      const tk = {id: tid++, type: 'Task', kind: 'Task', level: 3, title: taskNames[(n + t) % taskNames.length], state: 'New', bucket: 'new',
+        assignee: rnd() < .7 ? who : people[Math.floor(rnd() * people.length)], iteration: D.project, remaining: [2, 3, 4, 6, 8][Math.floor(rnd() * 5)],
+        parent: st.id, children: [], url: '#', sample: true};
+      D.items.push(tk); byId.set(tk.id, tk); st.children.push(tk.id);
+    }
+  });
+  D.graph.edges.push({from: 'w9000', to: 'w9003', kind: 'depends'}, {from: 'w9006', to: 'w9010', kind: 'depends'});
+})();
+D.items.forEach(it => { it.sp = spIdx(it); });
+// Demo: sprint lengths can be changed (1-5 weeks). Later sprints shift so nothing overlaps.
+const ORIG = SPR.map(s => ({start: s.start, finish: s.finish}));
+const DAY = 864e5, isoDay = t => new Date(t).toISOString().slice(0, 10) + 'T00:00:00Z';
+const weeksOf = i => Math.max(1, Math.round((Date.parse(ORIG[i].finish) - Date.parse(ORIG[i].start) + 3 * DAY) / (7 * DAY)));
+// Example sprint for the demo: Oct 26 - Nov 20, 2026 (4 weeks)
+const EX_START = '2026-10-26', EX_WEEKS = 4;
+const EX = (() => { const i = ORIG.findIndex(o => String(o.start).slice(0, 10) === EX_START); return i >= 0 ? i : SPR.findIndex(s => s.timeFrame === 'future'); })();
+function applyLengths() {
+  const L = load('len', null) || (EX >= 0 ? {[EX]: EX_WEEKS} : {});
+  let shift = 0;
+  SPR.forEach((s, i) => {
+    const want = L[i] || weeksOf(i), start = Date.parse(ORIG[i].start) + shift * 7 * DAY;
+    s.start = isoDay(start); s.finish = isoDay(start + (want * 7 - 3) * DAY);
+    shift += want - weeksOf(i);
+  });
+}
+applyLengths();
+const curIdx = SPR.findIndex(s => s.timeFrame === 'current');
+const people = [...new Set(D.items.filter(i => i.type !== 'Epic' && i.type !== 'Feature').map(i => i.assignee).filter(Boolean))].sort();
+const needs = new Map();   // "to" needs "from" first (successor links)
+D.graph.edges.filter(e => e.kind === 'depends').forEach(e => { const to = +e.to.slice(1); if (!needs.has(to)) needs.set(to, []); needs.get(to).push(+e.from.slice(1)); });
+const tasksOf = st => (st.children || []).map(id => byId.get(id)).filter(t => t && t.type === 'Task' && t.bucket !== 'done' && t.bucket !== 'removed');
+
+// ---------- plan state (kept in this browser) ----------
+let target = load('target', SPR.findIndex(s => s.timeFrame === 'future'));
+if (!(target >= 0 && target < SPR.length)) target = Math.max(0, curIdx);
+let P = load('plan', {});      // story id -> {sp, who}
+let E = load('est', {});       // story id -> points agreed in poker
+let C = load('cap', null) || exampleCap();
+function exampleCap() {
+  if (EX < 0 || String(SPR[EX].start).slice(0, 10) !== EX_START) return {};
+  const [a, b, c, d, e] = people;   // Avery Chen, Jordan Patel, Riley Okafor, Sam Rivera, Taylor Brooks in the demo
+  const week = start => { const o = {}; for (let i = 0; i < 5; i++) o[new Date(Date.parse(start + 'T00:00:00Z') + i * 864e5).toISOString().slice(0, 10)] = 'full'; return o; };
+  return {[EX]: {
+    hpd: e ? {[e]: 4} : {},                                    // part-time
+    off: Object.assign({},
+      a ? {[a]: {'2026-10-30': 'full'}} : {},                 // a Friday off
+      b ? {[b]: week('2026-11-16')} : {},                     // the last week off
+      c ? {[c]: {'2026-11-09': '2h'}} : {},                   // a 2-hour appointment
+      d ? {[d]: {'2026-11-03': 'half'}} : {}),                // half a day
+    team: {'2026-11-11': 'full'}                              // Veterans Day
+  }};
+}       // sprint -> {hpd: {who: h}, off: {who: {date: code}}, team: {date: code}}
+let S = load('meeting', {step: 0, ready: {}, fist: {}, committed: {}});
+// Tasks created during planning: {id, parent, title, who, hrs, kind}. They join the data like any other task.
+let NT = load('newtasks', []);
+function addTaskItem(t) {
+  const st = byId.get(t.parent); if (!st) return;
+  const it = {id: t.id, type: 'Task', kind: 'Task', level: 3, title: t.title, state: 'New', bucket: 'new', assignee: t.who, iteration: st.iteration,
+    remaining: t.hrs, parent: st.id, children: [], url: '#', isNewTask: true, taskKind: t.kind};
+  D.items.push(it); byId.set(it.id, it); st.children.push(it.id);
+}
+NT.forEach(addTaskItem);
+const planned = it => P[it.id] || {sp: it.sp, who: it.assignee || ''};
+const pts = it => E[it.id] != null ? E[it.id] : it.points;
+
+// ---------- capacity: hours per day minus time off, over the sprint's working days ----------
+const OFF =[['', 'Working', '\u00b7'], ['1h', '1 hour off', '1h'], ['2h', '2 hours off', '2h'], ['3h', '3 hours off', '3h'], ['half', 'Half day off', '\u00bd'], ['5h', '5 hours off', '5h'], ['full', 'Full day off', 'Off']];
+const offHours = (code, hpd) => !code ? 0 : code === 'full' ? hpd : code === 'half' ? hpd / 2 : Math.min(hpd, parseFloat(code));
+const days = s => { const out = []; if (!s.start || !s.finish) return out;
+  for (let d = Date.parse(s.start.slice(0, 10) + 'T00:00:00Z'); d <= Date.parse(s.finish.slice(0, 10) + 'T00:00:00Z'); d += 864e5) { const w = new Date(d).getUTCDay(); if (w && w < 6) out.push(new Date(d).toISOString().slice(0, 10)); }
+  return out; };
+const capOf = (sp = target) => (C[sp] = C[sp] || {hpd: {}, off: {}, team: {}});
+const hpdOf = (who, sp = target) => { const v = capOf(sp).hpd[who]; return v == null ? 6 : v; };
+function capacity(who, sp = target) {
+  const c = capOf(sp), hpd = hpdOf(who, sp), ds = days(SPR[sp]);
+  let off = 0; ds.forEach(d => { off += Math.max(offHours((c.off[who] || {})[d], hpd), offHours(c.team[d], hpd)); });
+  return {hpd, days: ds.length, off, cap: Math.max(0, hpd * ds.length - off)};
+}
+const HPP = 4;   // hours per story point, for stories that have no tasks yet
+// Assigned work: remaining hours of the tasks under stories planned in this sprint (task owner, else story owner),
+// plus points x HPP for stories with no tasks yet
+function work(sp = target) {
+  const w = new Map(), add = (who, k, v) => { const r = w.get(who) || {task: 0, est: 0}; r[k] += v; w.set(who, r); };
+  D.items.filter(it => isStory(it) && it.bucket !== 'done' && planned(it).sp === sp).forEach(st => {
+    const ts = tasksOf(st), owner = planned(st).who;
+    if (ts.length) ts.forEach(t => add(t.assignee || owner, 'task', +t.remaining || 0));
+    else add(owner, 'est', (+pts(st) || 0) * HPP);
+  });
+  return w;
+}
+const inSprint = () => D.items.filter(it => isStory(it) && it.bucket !== 'done' && planned(it).sp === target);
+const pastIdx = SPR.map((s, i) => i).filter(i => SPR[i].timeFrame === 'past').slice(-3);
+// Velocity per week over the last 3 sprints, scaled to the length of the sprint being planned
+const pastPts = pastIdx.reduce((a, i) => a + D.items.filter(it => isStory(it) && it.bucket === 'done' && it.sp === i).reduce((x, it) => x + (+it.points || 0), 0), 0);
+const pastWeeks = pastIdx.reduce((a, i) => a + Math.max(1, Math.round(days(SPR[i]).length / 5)), 0);
+const vel = () => pastWeeks ? pastPts / pastWeeks * Math.max(1, Math.round(days(SPR[target]).length / 5)) : 0;
+
+// ---------- shared bits ----------
+const colors = ['#0078d4', '#8764b8', '#038387', '#ca5010', '#c239b3', '#4f6bed', '#107c10'];
+const colorOf = who => who ? colors[people.indexOf(who) % colors.length] : '#605e5c';
+const initials = who => who ? who.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
+const av = (who, cls) => `<span class="av ${cls || ''}" style="--c:${colorOf(who)}" title="${esc(who || 'Unassigned')}">${initials(who)}</span>`;
+function bar(r, cap) {
+  const max = Math.max(cap, r.task + r.est, 1), pct = v => 100 * v / max, over = r.task + r.est > cap;
+  return `<div class="bar" title="${h1(r.task)} h task work${r.est ? ` + ${h1(r.est)} h estimated from points` : ''} of ${h1(cap)} h capacity">
+    <i style="left:0;width:${pct(r.task)}%;background:${over ? 'var(--bad)' : 'var(--accent)'}"></i><i class="est" style="left:${pct(r.task)}%;width:${pct(r.est)}%"></i>
+    <span class="cap" style="left:calc(${pct(cap)}% - 1px)"></span></div>`;
+}
+function issuesOf(it) {
+  const out = [];
+  if (pts(it) == null) out.push(['warn', 'No estimate']);
+  if (!planned(it).who) out.push(['warn', 'Unassigned']);
+  for (const dep of needs.get(it.id) || []) { const d = byId.get(dep); if (!d || d.bucket === 'done') continue;
+    const s = planned(d).sp; if (s < 0 || s > target) out.push(['bad', `Needs #${dep} first`]); else if (s === target) out.push(['warn', `Needs #${dep} (same sprint)`]); }
+  return out;
+}
+function card(it, inPlan) {
+  const f = ancestor(it, 1), iss = inPlan ? issuesOf(it) : [], hrs = tasksOf(it).reduce((a, t) => a + (+t.remaining || 0), 0);
+  return `<div class="wi" draggable="true" data-id="${it.id}" style="--c:${it.type === 'Bug' ? '#cc293d' : '#009ccc'}">
+    <span class="id">#${it.id}</span><span class="t" title="${esc(it.title)}">${esc(it.title)}</span>
+    <span>${isStory(it) ? `<button class="tsk" data-open="${it.id}" data-focus="qt" title="Add a validation, assist or custom task">+ Task</button> ` : ''}${inPlan ? `<button class="act" data-out="${it.id}" title="Back to the backlog">&times;</button>` : `<button class="act" data-add="${it.id}" title="Add to the sprint">+</button>`}</span>
+    <div class="meta"><span class="pts${pts(it) == null ? ' none' : ''}">${pts(it) == null ? '?' : pts(it)}</span>
+      <span>${hrs ? h1(hrs) + ' h in ' + tasksOf(it).length + ' task' + (tasksOf(it).length > 1 ? 's' : '') : 'no tasks yet'}</span>
+      ${inPlan ? '' : `<span>${esc(planned(it).who || 'Unassigned')}</span>`}${f ? `<span>${esc(f.title.slice(0, 26))}</span>` : ''}
+      ${E[it.id] != null ? '<span class="tag new">estimated</span>' : ''}${it.sample ? '<span class="tag new">sample</span>' : ''}
+      ${iss.map(([k, t]) => `<span class="tag ${k}">${esc(t)}</span>`).join('')}</div></div>`;
+}
+function setPlan(id, sp, who) {
+  const it = byId.get(id); if (!it) return;
+  if (sp === it.sp && who === (it.assignee || '')) delete P[id]; else P[id] = {sp, who};
+  save('plan', P); render();
+}
+
+// ---------- meeting: agenda, timer, team readiness ----------
+const STEPS = [['capacity', 'Capacity', 5], ['carry', 'Carry over', 5], ['poker', 'Estimate', 15], ['board', 'Fill the sprint', 15], ['commit', 'Commit', 5]];
+let timer = {left: STEPS[S.step][2] * 60, run: false, h: null};
+function goStep(i) {
+  S.step = Math.max(0, Math.min(STEPS.length - 1, i)); S.ready = {}; save('meeting', S);
+  timer.left = STEPS[S.step][2] * 60; tick(); render();
+}
+function tick() { const m = Math.floor(Math.abs(timer.left) / 60), s = Math.abs(timer.left) % 60;
+  $('#timer').textContent = (timer.left < 0 ? '+' : '') + m + ':' + String(s).padStart(2, '0'); $('#timer').classList.toggle('late', timer.left < 0);
+  $('#tgo').textContent = timer.run ? 'Pause' : 'Start'; }
+$('#tgo').onclick = () => { timer.run = !timer.run; clearInterval(timer.h); if (timer.run) timer.h = setInterval(() => { timer.left--; tick(); if (timer.left === 0) toast(`Time's up for ${STEPS[S.step][1]} - wrap up or take a minute more`); }, 1000); tick(); };
+$('#next').onclick = () => { if (S.step < STEPS.length - 1) goStep(S.step + 1); };
+function renderMeeting() {
+  $('#steps').innerHTML = STEPS.map(([k, label], i) => `<button class="step${i === S.step ? ' on' : ''}${i < S.step ? ' done' : ''}" data-step="${i}"><span class="n">${i < S.step ? '&#10003;' : i + 1}</span>${label}</button>`).join('');
+  $('#team').innerHTML = people.map(p => `<span class="av" data-ready="${esc(p)}" style="--c:${colorOf(p)};cursor:pointer" title="${esc(p)}${S.ready[p] ? ' - ready' : ''}">${initials(p)}${S.ready[p] ? '<span class="ok">&#10003;</span>' : ''}</span>`).join('') +
+    `<span class="sub">${Object.keys(S.ready).length}/${people.length} ready</span>`;
+  $('#next').disabled = S.step === STEPS.length - 1;
+  $$('section.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + STEPS[S.step][0]));
+}
+
+// ---------- 1. capacity ----------
+function renderCapacity() {
+  const ds = days(SPR[target]), c = capOf(), w = work();
+  // Group the working days into weeks (a new week starts on Monday)
+  const weeks = [];
+  ds.forEach(d => { const wd = new Date(d + 'T00:00:00Z').getUTCDay(); if (!weeks.length || wd === 1) weeks.push([]); weeks[weeks.length - 1].push(d); });
+  const sel = (code, attrs) => `<select class="off${code === 'full' ? ' full' : code ? ' part' : ''}" ${attrs} title="${esc((OFF.find(o => o[0] === (code || '')) || OFF[0])[1])}">${OFF.map(([v, l, sh]) => `<option value="${v}" title="${l}"${v === (code || '') ? ' selected' : ''}>${sh}</option>`).join('')}</select>`;
+  const dayHead = d => { const dt = new Date(d + 'T00:00:00Z'); return `${dt.toLocaleDateString(undefined, {weekday: 'narrow', timeZone: 'UTC'})}<br>${dt.getUTCDate()}`; };
+  const avail = (p, wk) => { const hpd = hpdOf(p); return wk.reduce((a, d) => a + Math.max(0, hpd - Math.max(offHours((c.off[p] || {})[d], hpd), offHours(c.team[d], hpd))), 0); };
+  const head1 = weeks.map((wk, i) => `<th class="wkh" colspan="${wk.length + 1}">Week ${i + 1} <span class="sub">${fmtDate(wk[0])} &ndash; ${fmtDate(wk[wk.length - 1])}</span></th>`).join('');
+  const head2 = weeks.map(wk => wk.map((d, j) => `<th class="${j ? '' : 'ws'}">${dayHead(d)}</th>`).join('') + '<th title="Hours available that week - click to toggle the whole week off">Week</th>').join('');
+  const rows = people.map(p => { const cp = capacity(p), r = w.get(p) || {task: 0, est: 0};
+    return `<tr><td>${av(p, 'sm')} ${esc(p)}</td><td><input type="number" class="hpd" min="0" max="12" step="0.5" value="${cp.hpd}" data-hpd="${esc(p)}"></td>
+      ${weeks.map((wk, i) => wk.map((d, j) => `<td class="${j ? '' : 'ws'}">${sel((c.off[p] || {})[d], `data-off="${esc(p)}" data-day="${d}"`)}</td>`).join('') +
+        `<td class="wt"><button class="wkbtn${avail(p, wk) ? '' : ' zero'}" data-weekoff="${esc(p)}" data-wk="${i}" title="${esc(p)}: ${h1(avail(p, wk))} h available in week ${i + 1}. Click to toggle the whole week off.">${h1(avail(p, wk))}h</button></td>`).join('')}
+      <td><b>${h1(cp.cap)} h</b>${cp.off ? `<div class="sub">${h1(cp.off)} h off</div>` : ''}</td><td>${h1(r.task + r.est)} h</td><td>${bar(r, cp.cap)}</td></tr>`; }).join('');
+  const team = `<tr><td><b>Team days off</b><div class="sub">holidays, offsites</div></td><td></td>${weeks.map((wk, i) => wk.map((d, j) => `<td class="${j ? '' : 'ws'}">${sel(c.team[d], `data-team="${d}"`)}</td>`).join('') +
+    `<td class="wt"><button class="wkbtn" data-teamweek="${i}" title="Toggle the whole week off for everyone">Week</button></td>`).join('')}<td colspan="3"></td></tr>`;
+  $('#capgrid').classList.toggle('long', weeks.length > 2);
+  $('#capgrid').innerHTML = ds.length ? `<table><thead><tr><th rowspan="2">Person</th><th rowspan="2">Hours / day</th>${head1}<th rowspan="2">Capacity</th><th rowspan="2">Assigned work</th><th rowspan="2" style="min-width:160px">Work vs capacity</th></tr><tr>${head2}</tr></thead><tbody>${rows}${team}</tbody></table>`
+    : '<p class="sub">This sprint has no dates, so capacity can\'t be worked out.</p>';
+  $('#capgrid').dataset.weeks = JSON.stringify(weeks);
+  renderCalendar($('#cal1'));
+}
+
+// ---------- sprint calendar: who's in, day by day, and when the planned work fits ----------
+function renderCalendar(el) {
+  const ds = days(SPR[target]), c = capOf();
+  if (!ds.length) { el.innerHTML = '<p class="sub">This sprint has no dates.</p>'; return; }
+  const full = people.reduce((a, p) => a + hpdOf(p), 0);
+  const day = d => { const offs = []; let h = 0;
+    people.forEach(p => { const hpd = hpdOf(p), own = offHours((c.off[p] || {})[d], hpd), team = offHours(c.team[d], hpd), off = Math.max(own, team);
+      h += Math.max(0, hpd - off); if (off) offs.push([p, off >= hpd ? 'off' : h1(off) + 'h']); });
+    return {h, offs, team: !!c.team[d]}; };
+  const weeks = []; ds.forEach(d => { const wd = new Date(d + 'T00:00:00Z').getUTCDay(); if (!weeks.length || wd === 1) weeks.push([]); weeks[weeks.length - 1].push(d); });
+  const today = new Date().toISOString().slice(0, 10);
+  const w = work(), totalWork = [...w.values()].reduce((a, r) => a + r.task + r.est, 0);
+  let cum = 0; const series = ds.map(d => { cum += day(d).h; return cum; });
+  const doneIdx = series.findIndex(v => v >= totalWork), capTotal = cum;
+  const cells = weeks.map((wk, i) => {
+    const first = new Date(wk[0] + 'T00:00:00Z').getUTCDay(), pads = '<div class="cday pad"></div>'.repeat(Math.max(0, first - 1));
+    const end = 5 - (first - 1) - wk.length, wh = wk.reduce((a, d) => a + day(d).h, 0);
+    return `<div class="wl">Week ${i + 1}<span class="sub" style="font-weight:400">${fmtDate(wk[0])}</span></div>${pads}${wk.map(d => { const x = day(d), pct = full ? x.h / full : 0, dt = new Date(d + 'T00:00:00Z');
+      const cls = !x.h ? ' none' : pct < .6 ? ' low' : '', fin = doneIdx >= 0 && ds[doneIdx] === d;
+      return `<div class="cday${cls}${d === today ? ' today' : ''}" style="--a:${pct.toFixed(2)}" title="${esc(fmtDate(d))}: ${h1(x.h)} of ${h1(full)} team hours${x.offs.length ? '\nOff: ' + x.offs.map(o => o[0] + ' ' + o[1]).join(', ') : ''}">
+        <div class="dn"><b>${dt.getUTCDate()}</b><span class="sub">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</span></div>
+        <div class="hrs">${h1(x.h)} h${fin ? ' &middot; <b style="color:var(--ok)">&#127937; done</b>' : ''}</div><div class="mini"><i style="width:${Math.round(pct * 100)}%"></i></div>
+        <div class="offs">${x.team ? '<span>&#127958; team day off</span>' : x.offs.map(o => `<span title="${esc(o[0])}">${initials(o[0])} ${o[1]}</span>`).join('')}</div></div>`; }).join('')}${'<div class="cday pad"></div>'.repeat(Math.max(0, end))}
+      <div class="wsum"><span class="sub">Week ${i + 1}</span><b>${h1(wh)} h</b><span class="sub">${full * wk.length ? Math.round(100 * wh / (full * wk.length)) : 0}% of the team</span></div>`; }).join('');
+  // Burn-up: team capacity adding up day by day, against the planned work and a target band (80-100% of capacity)
+  const n = ds.length, W = 920, H = 240, L = 52, R = 14, T = 26, B = 46;
+  const max = Math.max(capTotal, totalWork, 1) * 1.04;
+  const xs = i => L + (W - L - R) * i / n, y = v => H - B - (H - B - T) * v / max;   // xs(i) = left edge of day i
+  const path = `M${xs(0)},${y(0)}` + series.map((v, i) => ` L${xs(i + 1).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const pct = capTotal ? totalWork / capTotal : 0, over = totalWork - capTotal, lo = capTotal * .8, aim = capTotal * .85;
+  const longDate = d => new Date(d + 'T00:00:00Z').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC'});
+  const verdict = !totalWork ? '&#128203; Nothing planned yet &mdash; fill the sprint in step 4.'
+    : pct > 1 ? `&#10060; <b>Over-committed:</b> ${h1(totalWork)} h planned against ${h1(capTotal)} h of capacity &mdash; ${h1(over)} h too much. Move something out.`
+    : pct >= .8 ? `&#9989; <b>Well planned:</b> ${h1(totalWork)} h is ${Math.round(pct * 100)}% of capacity, leaving ${h1(capTotal - totalWork)} h for bugs, support and surprises.${doneIdx >= 0 ? ` At full focus it's done by ${esc(longDate(ds[doneIdx]))}.` : ''}`
+    : `&#9888;&#65039; <b>Under-planned:</b> ${h1(totalWork)} h is only ${Math.round(pct * 100)}% of the team's ${h1(capTotal)} h. Add about <b>${h1(aim - totalWork)} h</b> more to reach the 80&ndash;90% target.`;
+  const todayIdx = ds.indexOf(today);
+  const svg = `<svg viewBox="0 0 ${W} ${H}">
+      <rect x="${xs(0)}" y="${y(capTotal)}" width="${xs(n) - xs(0)}" height="${y(lo) - y(capTotal)}" fill="color-mix(in srgb, var(--ok) 14%, transparent)"/>
+      <text x="${xs(n) - 4}" y="${y(capTotal) + 13}" text-anchor="end">Target 80&ndash;100% (${h1(lo)}&ndash;${h1(capTotal)} h)</text>
+      ${ds.map((d, i) => { const dt = new Date(d + 'T00:00:00Z'), first = i === 0 || dt.getUTCDate() === 1 || dt.getUTCDay() === 1, cx = (xs(i) + xs(i + 1)) / 2, offDay = !!c.team[d];
+        return (offDay ? `<rect x="${xs(i)}" y="${T}" width="${xs(i + 1) - xs(i)}" height="${H - B - T}" fill="color-mix(in srgb, var(--bad) 14%, transparent)"><title>${esc(longDate(d))}: team day off</title></rect>` : '') +
+          (dt.getUTCDay() === 1 || i === 0 ? `<line x1="${xs(i)}" x2="${xs(i)}" y1="${T - 14}" y2="${H - B + 34}" stroke="var(--line)"/>` : '') +
+          `<text x="${cx}" y="${H - B + 15}" text-anchor="middle">${dt.toLocaleDateString(undefined, {weekday: 'short', timeZone: 'UTC'}).slice(0, 2)}</text>` +
+          `<text x="${cx}" y="${H - B + 29}" text-anchor="middle"${i === todayIdx ? ' style="fill:var(--accent);font-weight:700"' : ''}>${first ? dt.toLocaleDateString(undefined, {month: 'short', day: 'numeric', timeZone: 'UTC'}) : dt.getUTCDate()}</text>`; }).join('')}
+      ${weeks.map((wk, i) => `<text x="${xs(ds.indexOf(wk[0])) + 5}" y="${T - 4}" style="font-weight:600">Week ${i + 1}</text>`).join('')}
+      ${todayIdx >= 0 ? `<line x1="${(xs(todayIdx) + xs(todayIdx + 1)) / 2}" x2="${(xs(todayIdx) + xs(todayIdx + 1)) / 2}" y1="${T}" y2="${H - B}" stroke="var(--accent)" stroke-dasharray="2 3"/>` : ''}
+      <path d="${path} L${xs(n)},${y(0)} Z" fill="color-mix(in srgb, var(--done) 16%, transparent)"/>
+      <path d="${path}" fill="none" stroke="var(--done)" stroke-width="2.5"/>
+      <line x1="${xs(0)}" x2="${xs(n)}" y1="${y(totalWork)}" y2="${y(totalWork)}" stroke="${pct > 1 ? 'var(--bad)' : pct >= .8 ? 'var(--ok)' : 'var(--warn)'}" stroke-width="2.5" stroke-dasharray="7 5"/>
+      <text x="${xs(0) + 6}" y="${y(totalWork) - 6}" style="font-weight:600">Planned work ${h1(totalWork)} h (${Math.round(pct * 100)}% of capacity)</text>
+      ${doneIdx >= 0 && totalWork ? `<circle cx="${xs(doneIdx + 1)}" cy="${y(series[doneIdx])}" r="5" fill="var(--ok)"><title>At full focus, done by ${esc(longDate(ds[doneIdx]))}</title></circle>` : ''}
+      <text x="${L - 6}" y="${y(capTotal) + 4}" text-anchor="end">${h1(capTotal)}h</text><text x="${L - 6}" y="${y(lo) + 4}" text-anchor="end">${h1(lo)}h</text><text x="${L - 6}" y="${y(0) + 4}" text-anchor="end">0</text>
+    </svg>`;
+  el.innerHTML = `<div class="calhead"><h3 style="margin:0">Sprint calendar</h3><span class="sub">${esc(SPR[target].name)} &middot; ${weeks.length} week${weeks.length > 1 ? 's' : ''} &middot; ${ds.length} working days &middot; ${h1(capTotal)} h capacity &middot; ${h1(totalWork)} h planned</span></div>
+    <div class="cal"><span></span>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(n => `<div class="dh">${n}</div>`).join('')}<span></span>${cells}</div>
+    ${svg}
+    <div class="sub">${verdict}<br>Green = team capacity adding up day by day (time off already taken out) &middot; dashed = planned work &middot; shaded band = the 80&ndash;100% target &middot; red columns = team days off.</div>`;
+}
+
+// ---------- 2. carry over ----------
+function renderCarry() {
+  const prev = target - 1, items = prev >= 0 ? D.items.filter(it => isStory(it) && it.sp === prev && it.bucket !== 'done') : [];
+  if (!items.length) { $('#carrybody').innerHTML = `<p class="sub">Nothing unfinished in ${prev >= 0 ? esc(SPR[prev].name) : 'the previous sprint'}.</p>`; return; }
+  $('#carrybody').innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><b>${items.length} unfinished in ${esc(SPR[prev].name)}</b><span class="grow"></span>
+    <button class="btn" id="carryAll">Bring them all</button></div><table style="width:100%;border-collapse:collapse">${items.map(it => { const on = planned(it).sp === target, hrs = tasksOf(it).reduce((a, t) => a + (+t.remaining || 0), 0);
+      return `<tr style="border-bottom:1px solid var(--line)"><td style="padding:6px"><label><input type="checkbox" data-carry="${it.id}"${on ? ' checked' : ''}> #${it.id} ${esc(it.title)}</label></td>
+        <td class="sub">${esc(it.state)}</td><td>${av(planned(it).who, 'sm')}</td><td class="sub">${pts(it) == null ? '?' : pts(it)} pts &middot; ${h1(hrs)} h left</td></tr>`; }).join('')}</table>`;
+}
+
+// ---------- story details: user story text and acceptance criteria ----------
+// The demo data has no descriptions, so sample text is filled in. A real extension would read the work item's
+// Description and Acceptance Criteria fields (System.Description, Microsoft.VSTS.Common.AcceptanceCriteria).
+const SPECIFIC = {
+  'Export invoices to PDF': ['an invoice is open, when Export is clicked, then a PDF with the same totals and line items downloads', 'the PDF includes the company logo, invoice number and due date'],
+  'Remember last search filters': ['filters were set, when the user returns to search, then the same filters are applied', 'a Clear filters button resets them'],
+  'Rate-limit login attempts': ['5 failed sign-ins within 10 minutes, when a 6th is tried, then the account is locked for 15 minutes', 'the user sees how long until they can try again'],
+  'Bulk edit user roles': ['several users are selected, when a role is chosen, then all of them get it in one save', 'a summary shows how many were changed'],
+  'Show delivery ETA on order page': ['an order has shipped, when the order page opens, then the carrier ETA is shown', 'the ETA updates when the carrier changes it'],
+  'Accessible colour contrast pass': ['any page, when checked with an accessibility tool, then text contrast meets WCAG AA (4.5:1)', 'focus outlines are visible on every control'],
+  'Retry failed webhook deliveries': ['a webhook fails, when it is retried, then it backs off 1, 5 and 30 minutes', 'after the last retry it is listed for manual resend'],
+  'Audit log for admin changes': ['an admin changes a setting, when the audit log is opened, then who, what, when and the old and new values are shown', 'audit entries cannot be edited or deleted'],
+  'Offline mode for field app': ['the device is offline, when a form is saved, then it is queued and synced when back online', 'the user sees what is waiting to sync'],
+  'Cache product images at edge': ['an image was requested before, when it is requested again, then it is served from the edge cache', 'changing an image clears its cached copy within 5 minutes'],
+  'Two-step sign-in for admins': ['an admin signs in, when the password is correct, then a second step is required', 'admins can register an authenticator app or security key'],
+  'Paginate order history': ['a customer has more than 25 orders, when history opens, then 25 are shown with next / previous', 'the page loads in under 1 second'],
+  'Fix timezone on receipts': ['a purchase late in the evening, when the receipt is printed, then it shows the store\'s local date and time', 'existing receipts are not changed'],
+  'Health check endpoint for payments': ['the service is running, when /health is called, then it returns 200 with dependency status', 'a failing dependency returns 503 and names it'],
+  'Dark mode for the portal': ['the system is set to dark, when the portal opens, then it uses the dark theme', 'users can override it in settings'],
+  'Import contacts from CSV': ['a CSV with name, email and phone, when it is uploaded, then valid rows are imported and invalid ones listed', 'duplicates by email are skipped']
+};
+const ROLES = ['customer', 'support agent', 'team admin', 'field engineer', 'finance user'];
+const WHY = ['I can finish my work without calling support', 'mistakes are caught before they reach customers', 'I spend less time on manual steps', 'the data I rely on stays accurate', 'it works the way I expect'];
+function detailsOf(it) {
+  const h = it.id % 5, title = it.title.replace(/ part \d+$/i, '');
+  const specific = SPECIFIC[it.title] || [`a signed-in ${ROLES[h]}, when they use "${title.toLowerCase()}", then it completes without errors`];
+  return {
+    story: `As a <b>${ROLES[h]}</b>, I want <b>${esc(title.charAt(0).toLowerCase() + title.slice(1))}</b>, so that ${WHY[(h + 2) % 5]}.`,
+    ac: specific.map(t => / when /.test(t) ? `<b>Given</b> ${esc(t).replace(/, when /, ', <b>when</b> ').replace(/, then /, ', <b>then</b> ')}` : esc(t.charAt(0).toUpperCase() + t.slice(1)) + '.').concat([
+      'Errors show a clear message and nothing is left half-saved.',
+      'Works on desktop and mobile, with the keyboard and a screen reader.',
+      'Automated tests cover the new behaviour; the change is noted in the release notes.'])
+  };
+}
+function storyHtml(it, big) {
+  const d = detailsOf(it), f = ancestor(it, 1), ep = ancestor(it, 0), ts = tasksOf(it), deps = (needs.get(it.id) || []).map(id => byId.get(id)).filter(Boolean);
+  const hrs = ts.reduce((a, t) => a + (+t.remaining || 0), 0), pl = planned(it);
+  return `<div class="us">${d.story}</div>
+    <div class="sect">Acceptance criteria <span class="sample">sample text in this demo</span></div>
+    <ol class="ac">${d.ac.map(a => `<li>${a}</li>`).join('')}</ol>
+    <div class="sect">Details</div>
+    <div class="sdet"><div><span>Type</span>${esc(it.type)}</div><div><span>State</span>${esc(it.state)}</div><div><span>Owner</span>${esc(pl.who || 'Unassigned')}</div>
+      <div><span>Feature</span>${esc(f ? f.title : '-')}</div><div><span>Epic</span>${esc(ep ? ep.title : '-')}</div><div><span>Area</span>${esc(it.area || '-')}</div>
+      <div><span>Planned for</span>${pl.sp >= 0 ? esc(SPR[pl.sp].name) : 'Backlog'}</div><div><span>Estimate</span>${pts(it) == null ? 'Not estimated' : pts(it) + ' pts'}</div>
+      <div><span>Task hours</span>${ts.length ? h1(hrs) + ' h' : 'No tasks yet'}</div>${it.tags ? `<div><span>Tags</span>${esc(it.tags)}</div>` : ''}</div>
+    ${ts.length ? `<div class="sect">Tasks</div><div class="tasks">${ts.map(t => `<span>${esc(t.title)} &middot; ${t.remaining} h${t.assignee ? ' &middot; ' + esc(t.assignee) : ''}</span>`).join('')}</div>` : ''}
+    ${deps.length ? `<div class="sect">Depends on</div><div class="tasks">${deps.map(x => `<span>#${x.id} ${esc(x.title)} &middot; ${esc(x.state)}${planned(x).sp >= 0 ? ' &middot; ' + esc(SPR[planned(x).sp].name) : ''}</span>`).join('')}</div>` : ''}`;
+}
+// Quick task creation on a story: Validation, Assisting a team member, or a custom task
+const TASK_KINDS = {
+  validation: {label: 'Validation', icon: '&#9989;', title: st => `Validate: ${st.title}`, hrs: 2},
+  assist: {label: 'Assisting team member', icon: '&#129309;', title: st => `Assist ${(planned(st).who || 'the owner').split(' ')[0]}: ${st.title}`, hrs: 2},
+  custom: {label: 'Custom task', icon: '&#9998;', title: () => '', hrs: 4}
+};
+function suggestWho(st, kind) {
+  // Someone other than the owner with the most free hours this sprint
+  const w = work(), owner = planned(st).who;
+  const room = p => capacity(p).cap - ((w.get(p) || {}).task || 0) - ((w.get(p) || {}).est || 0);
+  return [...people].filter(p => kind === 'custom' || p !== owner).sort((a, b) => room(b) - room(a))[0] || owner || '';
+}
+function quickTaskHtml(st, kind) {
+  kind = kind || 'validation';
+  const k = TASK_KINDS[kind], who = suggestWho(st, kind);
+  return `<div class="qt" data-qt="${st.id}" data-kind="${kind}">
+    <div class="qt-kinds">${Object.entries(TASK_KINDS).map(([key, v]) => `<button class="qt-k${key === kind ? ' on' : ''}" data-qtkind="${key}">${v.icon} ${v.label}</button>`).join('')}</div>
+    <input type="text" class="qt-title" placeholder="Task title" value="${esc(k.title(st))}">
+    <div class="qt-row"><label class="sub">For <select class="qt-who">${people.map(p => `<option${p === who ? ' selected' : ''}>${esc(p)}</option>`).join('')}<option value="">Unassigned</option></select></label>
+      <label class="sub">Hours <input type="number" class="qt-hrs" min="0" step="0.5" value="${k.hrs}"></label>
+      <button class="btn primary" data-qtadd="${st.id}">Add task</button></div>
+    <div class="sub qt-note">${kind === 'validation' ? 'Someone other than the owner checks the acceptance criteria.' : kind === 'assist' ? 'Time a teammate spends helping the owner (pairing, reviews, answers).' : ''} Suggested: the teammate with the most free hours this sprint.</div></div>`;
+}
+let popId = null;
+// A look-alike of the Azure DevOps work item form. In a real extension this would open the actual form
+// (the work item form navigation service) instead.
+const TYPE_COLOR = {'User Story': '#009ccc', 'Product Backlog Item': '#009ccc', Requirement: '#009ccc', Bug: '#cc293d', Task: '#f2cb1d', Feature: '#773b93', Epic: '#ff7b00'};
+const stateColor = st => /closed|done|resolved|completed/i.test(st) ? '#339947' : /active|committed|in progress/i.test(st) ? '#007acc' : '#b2b2b2';
+function formHtml(it, meeting) {
+  const d = detailsOf(it), f = ancestor(it, 1), ts = tasksOf(it), deps = (needs.get(it.id) || []).map(id => byId.get(id)).filter(Boolean);
+  const succ = [...needs].filter(([, v]) => v.includes(it.id)).map(([k]) => byId.get(k)).filter(Boolean), pl = planned(it), who = pl.who;
+  const iter = pl.sp >= 0 ? SPR[pl.sp].path : D.project, reason = it.state === 'New' ? 'New' : it.state === 'Active' ? 'Implementation started' : 'Moved to state ' + it.state;
+  const link = (x, extra) => `<div class="wif-link" style="--c:${TYPE_COLOR[x.type] || '#888'}"><span class="ico"></span><span class="t">${x.id} ${esc(x.title)}</span><span class="sub"><span class="sdot" style="--sc:${stateColor(x.state)}"></span>${esc(x.state)}${extra || ''}</span></div>`;
+  const hrs = ts.reduce((a, t) => a + (+t.remaining || 0), 0);
+  return `${meeting || ''}
+  <div class="wif-head" style="--c:${TYPE_COLOR[it.type] || '#009ccc'}">
+    <div class="wif-type"><span class="ico"></span>${esc(it.type.toUpperCase())} ${it.id}
+      <span class="wif-tools"><button class="btn" disabled title="Demo - nothing is saved to Azure DevOps">Save &amp; Close</button><button class="btn" id="popclose" title="Close (Esc)">&times;</button></span></div>
+    <div class="wif-title">${esc(it.title)}</div>
+    <div class="wif-who">${av(who, 'sm')}<span>${esc(who || 'Unassigned')}</span><span class="sub">&#128172; 0 comments</span>${it.tags ? `<span>${esc(it.tags)}</span>` : '<span class="tagadd">+ Add tag</span>'}${it.sample ? '<span class="tag new">sample</span>' : ''}</div>
+  </div>
+  <div class="wif-fields">
+    <div class="wif-f"><span>State</span><b><span class="sdot" style="--sc:${stateColor(it.state)}"></span>${esc(it.state)}</b></div>
+    <div class="wif-f"><span>Area</span><b title="${esc(it.area)}">${esc(it.area || D.project)}</b></div>
+    <div class="wif-f"><span>Reason</span><b>${esc(reason)}</b></div>
+    <div class="wif-f"><span>Iteration</span><b title="${esc(iter)}">${esc(iter)}</b></div>
+  </div>
+  <div class="wif-tabs"><span class="on">Details</span><span>History</span><span>Links (${(f ? 1 : 0) + ts.length + deps.length + succ.length})</span><span>Attachments (0)</span></div>
+  <div class="wif-body">
+    <div class="wif-main">
+      <div class="wif-sec"><h4>Description</h4><div class="wif-rich">${d.story}</div></div>
+      <div class="wif-sec"><h4>Acceptance Criteria <span class="sample">sample text in this demo</span></h4><div class="wif-rich"><ol>${d.ac.map(a => `<li>${a}</li>`).join('')}</ol></div></div>
+      <div class="wif-sec"><h4>Discussion</h4><div class="wif-disc">${av(people[0], 'sm')}<div class="box">Add a comment. Use # to link a work item, @ to mention a person.</div></div></div>
+    </div>
+    <div class="wif-side">
+      <div class="wif-sec"><h4>Planning</h4><div class="wif-card wif-kv">
+        <span>Story Points</span><b class="big">${pts(it) == null ? '&nbsp;' : pts(it)}</b>
+        <span>Priority</span><b>${it.id % 3 + 1}</b>
+        <span>Risk</span><b>${['1 - High', '2 - Medium', '3 - Low'][it.id % 3]}</b>
+        <span>Remaining work</span><b>${ts.length ? h1(hrs) + ' h in ' + ts.length + ' task' + (ts.length > 1 ? 's' : '') : 'No tasks yet'}</b></div></div>
+      <div class="wif-sec"><h4>Classification</h4><div class="wif-card wif-kv"><span>Value area</span><b>${it.id % 4 ? 'Business' : 'Architectural'}</b></div></div>
+      <div class="wif-sec"><h4>Development</h4><div class="wif-card"><div class="wif-add">+ Add link</div><div class="sub" style="margin-top:4px">Link an Azure Repos commit, pull request or branch to see the status of your development.</div></div></div>
+      <div class="wif-sec"><h4>Related Work</h4><div class="wif-card"><div class="wif-add">+ Add link</div>
+        ${f ? `<div class="wif-grp">Parent</div>${link(f)}` : ''}
+        ${ts.length ? `<div class="wif-grp">Child</div>${ts.map(t => link(t, ` &middot; ${t.remaining} h${t.assignee ? ' &middot; ' + esc(t.assignee) : ''}${t.isNewTask ? ` <span class="tag new">new</span> <button class="rm" data-qtdel="${t.id}" title="Remove this new task">&times;</button>` : ''}`)).join('')}` : ''}
+        <div class="wif-grp">Add a task</div>${quickTaskHtml(it)}
+        ${deps.length ? `<div class="wif-grp">Predecessor</div>${deps.map(x => link(x)).join('')}` : ''}
+        ${succ.length ? `<div class="wif-grp">Successor</div>${succ.map(x => link(x)).join('')}` : ''}
+        ${!f && !ts.length && !deps.length && !succ.length ? '<div class="sub" style="margin-top:4px">No related work.</div>' : ''}</div></div>
+    </div>
+  </div>`;
+}
+function openStory(id) {
+  popId = id; const it = byId.get(id), q = pokerQueue(), i = q.findIndex(x => x.id === id), voted = people.filter(p => poker.votes[p] != null).length;
+  const meeting = `<div class="wif-meet"><b>&#127183; Planning poker</b><span>${i >= 0 ? `${i + 1} of ${q.length} to estimate` : 'not in the estimate queue'}</span>
+      ${id === poker.id ? `<span>&middot; ${voted}/${people.length} voted${poker.shown ? ' &middot; revealed' : ''}</span>` : ''}<span class="grow"></span>
+      <button class="btn" data-pop="-1" ${i > 0 ? '' : 'disabled'}>&lsaquo; Previous</button><button class="btn" data-pop="1" ${i >= 0 && i < q.length - 1 ? '' : 'disabled'}>Next &rsaquo;</button>
+      <button class="btn" id="popwin" title="Open this story in its own window - handy for a second screen">Open in a new window &#8599;</button></div>`;
+  $('#mbox').className = 'mbox wif';
+  $('#mbox').innerHTML = formHtml(it, meeting);
+  $('#modal').hidden = false;
+}
+function closeStory() { $('#modal').hidden = true; popId = null; }
+function storyWindow(id) {
+  const it = byId.get(id), css = [...document.querySelectorAll('style')].map(x => x.textContent).join('\n');
+  const w = window.open('', 'story' + id, 'width=1200,height=900');
+  if (!w) { toast('The browser blocked the new window - allow pop-ups for this page.'); return; }
+  w.document.write(`<!doctype html><html${document.documentElement.dataset.theme ? ` data-theme="${document.documentElement.dataset.theme}"` : ''}><head><meta charset="utf-8"><title>${esc(it.type)} ${it.id}: ${esc(it.title)}</title><style>${css} body{margin:0}</style></head>
+    <body><div class="mbox wif" style="max-width:none;max-height:none;box-shadow:none;border-radius:0">${formHtml(it)}</div></body></html>`);
+  w.document.close();
+}
+
+// ---------- 3. planning poker ----------
+const DECK = [1, 2, 3, 5, 8, 13, 21, '?'];
+let poker = {id: null, votes: {}, shown: false};
+const pokerQueue = () => D.items.filter(it => isStory(it) && it.bucket !== 'done' && (planned(it).sp === target || planned(it).sp < 0 || planned(it).sp > curIdx))
+  .sort((a, b) => (pts(a) == null ? 0 : 1) - (pts(b) == null ? 0 : 1) || (planned(b).sp === target) - (planned(a).sp === target) || a.id - b.id);
+function renderPoker() {
+  const q = pokerQueue(); if (poker.id == null || !byId.has(poker.id)) poker.id = q.length ? q[0].id : null;
+  $('#queue').innerHTML = q.map(it => `<div class="wi" data-pick="${it.id}" style="cursor:pointer;${it.id === poker.id ? 'outline:2px solid var(--accent)' : ''}"><span class="id">#${it.id}</span><span class="t">${esc(it.title)}</span><span class="pts${pts(it) == null ? ' none' : ''}">${pts(it) == null ? '?' : pts(it)}</span></div>`).join('');
+  const it = byId.get(poker.id);
+  if (!it) { $('#pokerbody').innerHTML = '<p class="sub">Nothing to estimate.</p>'; return; }
+  const votes = poker.votes, voted = people.filter(p => votes[p] != null), nums = voted.map(p => votes[p]).filter(v => v !== '?');
+  let verdict = '';
+  if (poker.shown && nums.length) {
+    const lo = Math.min(...nums), hi = Math.max(...nums), spread = DECK.indexOf(hi) - DECK.indexOf(lo);
+    const count = new Map(); nums.forEach(v => count.set(v, (count.get(v) || 0) + 1));
+    const top = [...count].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    verdict = spread <= 1 ? `<div class="verdict">&#127881; Close enough! Most picked <b>${top}</b>. <button class="btn primary" data-agree="${top}">Use ${top} points</button></div>`
+      : `<div class="verdict">&#129300; Spread from <b>${lo}</b> to <b>${hi}</b> &mdash; ${esc(people.find(p => votes[p] === lo))} and ${esc(people.find(p => votes[p] === hi))}, tell us why. <button class="btn" id="revote">Vote again</button></div>`;
+  }
+  $('#pokerbody').innerHTML = `<div class="sub">#${it.id} &middot; ${esc(it.type)} &middot; ${esc((ancestor(it, 1) || {}).title || '')}${pts(it) != null ? ` &middot; currently ${pts(it)} pts` : ' &middot; not estimated'}</div>
+    <div style="display:flex;gap:8px;align-items:center"><div class="story" style="flex:1">${esc(it.title)}</div><button class="btn" data-open="${it.id}" title="Open the story in the work item form, for everyone to read">Open user story &#8599;</button></div>
+    <details open><summary class="sub" style="cursor:pointer">Story, acceptance criteria and details</summary>${storyHtml(it)}</details>
+    <div class="table" style="margin-top:14px">${people.map(p => `<div class="seat"><div class="flip${votes[p] == null ? ' empty' : ''}${poker.shown && votes[p] != null ? ' up' : ''}">${poker.shown && votes[p] != null ? votes[p] : ''}</div>${av(p, 'sm')}</div>`).join('')}</div>
+    ${verdict}
+    <div class="voters">${people.map(p => `<div class="voter">${av(p)}<span>${esc(p)}${votes[p] != null ? ' &#10003;' : ''}</span><div class="deck">${DECK.map(v => `<button class="pc${votes[p] === v ? ' on' : ''}" data-vote="${esc(p)}" data-v="${v}">${v}</button>`).join('')}</div></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn" id="simulate" title="Demo: fill in votes for anyone who hasn't voted">Fill in the team's votes (demo)</button>
+      <span class="grow"></span><button class="btn" id="skip">Skip</button><button class="btn primary" id="reveal"${voted.length ? '' : ' disabled'}>Reveal ${voted.length}/${people.length}</button></div>`;
+}
+function nextPoker() { const q = pokerQueue(), i = q.findIndex(x => x.id === poker.id); poker = {id: (q[i + 1] || q[0] || {}).id, votes: {}, shown: false}; }
+
+// ---------- 4. board ----------
+let boardView = load('boardView', 'people'), swimRows = load('swimRows', 'feature');
+function renderSwim() {
+  // Columns: the backlog, then the current and future sprints. Rows: feature, epic or person.
+  const first = Math.max(0, curIdx), cols = [-1, ...SPR.map((s, i) => i).filter(i => i >= first)];
+  const stories = D.items.filter(it => isStory(it) && it.bucket !== 'done' && it.bucket !== 'removed' && (planned(it).sp < 0 || planned(it).sp >= first));
+  const rowKey = it => swimRows === 'person' ? planned(it).who : String((ancestor(it, swimRows === 'epic' ? 0 : 1) || {id: ''}).id);
+  const rowName = k => swimRows === 'person' ? (k || 'Unassigned') : k ? byId.get(+k).title : 'No ' + swimRows;
+  const rowLabel = k => swimRows === 'person' ? `${av(k, 'sm')} ${esc(rowName(k))}` : esc(rowName(k));
+  const keys = swimRows === 'person' ? [...people, ''] : [...new Set(stories.map(rowKey))].sort((a, b) => (a === '') - (b === '') || rowName(a).localeCompare(rowName(b)));
+  const head = sp => {
+    if (sp < 0) { const b = stories.filter(it => planned(it).sp < 0); return `<div class="colhead"><b>Backlog</b><span class="sub">${b.length} items &middot; ${b.reduce((a, it) => a + (+pts(it) || 0), 0)} pts</span></div>`; }
+    const s = SPR[sp], its = stories.filter(it => planned(it).sp === sp), w = [...work(sp).values()];
+    const sum = {task: w.reduce((a, r) => a + r.task, 0), est: w.reduce((a, r) => a + r.est, 0)}, cap = people.reduce((a, p) => a + capacity(p, sp).cap, 0);
+    return `<div class="colhead"><b>${esc(s.name)}${sp === curIdx ? ' <span class="sub">(current)</span>' : ''}${sp === target ? ' <span class="tag new">planning</span>' : ''}</b>
+      <span class="sub">${fmtDate(s.start)} &ndash; ${fmtDate(s.finish)} &middot; ${its.length} items &middot; ${its.reduce((a, it) => a + (+pts(it) || 0), 0)} pts</span>
+      <span class="sub">${h1(sum.task + sum.est)} h of ${h1(cap)} h capacity</span>${bar(sum, cap)}</div>`;
+  };
+  $('#swim').innerHTML = `<div class="swim"><table><thead><tr><th class="row">${swimRows === 'person' ? 'Person' : swimRows === 'epic' ? 'Epic' : 'Feature'}</th>${cols.map(sp => `<th class="${sp === target ? 'tgt' : ''}">${head(sp)}</th>`).join('')}</tr></thead><tbody>${
+    keys.map(k => `<tr><th class="row">${rowLabel(k)}</th>${cols.map(sp => { const its = stories.filter(it => rowKey(it) === k && planned(it).sp === sp);
+      return `<td class="cell${sp === curIdx ? ' cur' : ''}" data-sp="${sp}" data-row="${esc(k)}">${its.map(it => card(it, sp >= 0)).join('')}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+    <div class="sub" style="margin-top:8px">Drag a card to another column to move it to that sprint${swimRows === 'person' ? ', or to another row to give it to someone else' : ''}. Each sprint's bar is assigned work against that sprint's capacity (switch the sprint at the top to set its capacity in step 1).</div>`;
+}
+function renderBoard() {
+  $$('#bview button').forEach(b => b.classList.toggle('on2', b.dataset.bv === boardView));
+  $('#swimby').hidden = boardView !== 'swim'; $('#swimrows').value = swimRows;
+  $('#swim').hidden = boardView !== 'swim'; $('#peopleview').hidden = boardView === 'swim';
+  if (boardView === 'swim') { renderSwim(); return; }
+  const qs = $('#q').value.trim().toLowerCase(), grp = $('#group').value;
+  const list = D.items.filter(it => isStory(it) && it.bucket !== 'done' && it.bucket !== 'removed').filter(it => { const s = planned(it).sp; return s !== target && (s < 0 || s > curIdx); })
+    .filter(it => !qs || `#${it.id} ${it.title}`.toLowerCase().includes(qs)).sort((a, b) => a.id - b.id);
+  const groups = new Map(); list.forEach(it => { const k = (ancestor(it, grp === 'epic' ? 0 : 1) || {title: 'Other'}).title; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+  $('#backlog').innerHTML = list.length ? [...groups].map(([k, items]) => `<div class="grp">${esc(k)}</div>` + items.map(it => card(it, false)).join('')).join('') : '<div class="empty">Backlog is empty.</div>';
+  const items = inSprint(), w = work();
+  $('#lanes').innerHTML = `<h3>${esc(SPR[target].name)} <span class="sub">${fmtDate(SPR[target].start)} &ndash; ${fmtDate(SPR[target].finish)}</span></h3>` + [...people, ''].map(p => {
+    const mine = items.filter(it => planned(it).who === p), r = w.get(p) || {task: 0, est: 0};
+    if (!p && !mine.length && !r.task) return `<div class="lane" data-who=""><div class="lhead">${av('')}<b>Unassigned</b><span class="sub">drop here to plan without an owner</span></div></div>`;
+    const cp = p ? capacity(p) : null, tot = r.task + r.est;
+    return `<div class="lane" data-who="${esc(p)}"><div class="lhead">${av(p)}<b>${esc(p || 'Unassigned')}</b><span class="sub">${h1(tot)} h${cp ? ` of ${h1(cp.cap)} h &middot; ${cp.cap ? Math.round(100 * tot / cp.cap) : 0}%` : ''}</span>${cp ? bar(r, cp.cap) : ''}</div>
+      <div class="lcards">${mine.map(it => card(it, true)).join('') || '<div class="empty">Drop stories here</div>'}</div></div>`; }).join('');
+  // fit and checks
+  const capT = people.reduce((a, p) => a + capacity(p).cap, 0), wt = [...w.values()].reduce((a, r) => a + r.task + r.est, 0), ptsT = items.reduce((a, it) => a + (+pts(it) || 0), 0);
+  const f = capT ? wt / capT : 0, col = f > 1.05 ? 'var(--bad)' : f > .85 ? 'var(--warn)' : 'var(--ok)';
+  $('#fit').innerHTML = `<div class="fit"><i style="width:${Math.min(100, f * 100)}%;background:${col}"></i></div><div class="sub"><b>${h1(wt)} h</b> of ${h1(capT)} h team capacity (${Math.round(f * 100)}%) &middot; ${ptsT} pts planned; past sprints finished about ${h1(vel())} pts in this many weeks</div>`;
+  const out = [];
+  if (f > 1.05) out.push(['var(--bad)', `The team is booked for ${h1(wt)} h but has ${h1(capT)} h.`]);
+  people.forEach(p => { const cp = capacity(p), r = w.get(p) || {task: 0, est: 0}, t = r.task + r.est;
+    if (t > cp.cap * 1.05) out.push(['var(--bad)', `${esc(p)}: ${h1(t)} h of work, ${h1(cp.cap)} h available.`]);
+    else if (cp.cap && t < cp.cap * .5) out.push(['var(--muted)', `${esc(p)} has room: ${h1(cp.cap - t)} h free.`]); });
+  if ((w.get('') || {task: 0}).task) out.push(['var(--warn)', `${h1(w.get('').task)} h of tasks have no owner.`]);
+  items.forEach(it => issuesOf(it).forEach(([k, t]) => out.push([k === 'bad' ? 'var(--bad)' : 'var(--warn)', `#${it.id} ${esc(it.title.slice(0, 34))}: ${esc(t)}`])));
+  $('#checks').innerHTML = out.length ? out.map(([c, t]) => `<div class="check"><span class="dot" style="--c:${c}"></span><span>${t}</span></div>`).join('') : '<div class="sub">&#9989; All clear.</div>';
+}
+
+// ---------- 5. confidence vote ----------
+function renderCommit() {
+  renderCalendar($('#cal5'));
+  const F = S.fist, voted = people.filter(p => F[p]), avg = voted.length ? voted.reduce((a, p) => a + F[p], 0) / voted.length : 0;
+  $('#fists').innerHTML = people.map(p => `<div class="fist">${av(p)}<span>${esc(p)}</span><div class="f5">${[1, 2, 3, 4, 5].map(n => `<button class="${F[p] === n ? 'on' : ''}" data-fist="${esc(p)}" data-n="${n}" title="${n}">${['', '&#9994;', '&#9757;', '&#9996;', '&#129311;', '&#9995;'][n]}</button>`).join('')}</div></div>`).join('') +
+    `<div><button class="btn" id="simfist">Fill in the team's votes (demo)</button></div>`;
+  const items = inSprint(), w = work(), wt = [...w.values()].reduce((a, r) => a + r.task + r.est, 0), capT = people.reduce((a, p) => a + capacity(p).cap, 0);
+  const done = S.committed[target];
+  $('#verdict').innerHTML = `<div class="sub">Team confidence</div><div class="meter">${voted.length ? avg.toFixed(1) : '&ndash;'}<span class="sub"> / 5</span></div>
+    <div class="sub" style="text-align:center">${voted.length}/${people.length} voted</div>
+    <p>${items.length} items &middot; ${items.reduce((a, it) => a + (+pts(it) || 0), 0)} pts &middot; ${h1(wt)} h of ${h1(capT)} h capacity</p>
+    ${done ? `<p>&#127881; <b>Committed!</b> ${esc(SPR[target].name)} is planned. Export the changes to apply them in Azure DevOps.</p>` :
+      voted.length === people.length ? (avg >= 3.5 ? `<button class="btn primary" id="commit" style="width:100%">Commit to ${esc(SPR[target].name)} &#128640;</button>`
+        : `<p>&#129300; Confidence is low. Go back to <a href="#" data-step="3">Fill the sprint</a>, take something out, and vote again.</p>`) : '<p class="sub">Waiting for everyone to vote.</p>'}`;
+}
+
+// ---------- KPIs and render ----------
+function renderKpis() {
+  const items = inSprint(), w = work(), wt = [...w.values()].reduce((a, r) => a + r.task + r.est, 0), capT = people.reduce((a, p) => a + capacity(p).cap, 0);
+  const f = capT ? wt / capT : 0, cls = f > 1.05 ? 'bad' : f > .85 ? 'warn' : 'ok', ptsT = items.reduce((a, it) => a + (+pts(it) || 0), 0);
+  const unest = items.filter(it => pts(it) == null).length;
+  $('#kpis').innerHTML = `<div class="kpi"><span class="sub">Team capacity</span><b>${h1(capT)} h</b><span class="sub">${people.length} people, after time off</span></div>
+    <div class="kpi ${cls}"><span class="sub">Assigned work</span><b>${h1(wt)} h</b><span class="sub">${Math.round(f * 100)}% of capacity</span></div>
+    <div class="kpi"><span class="sub">Planned</span><b>${ptsT} pts</b><span class="sub">${items.length} items &middot; past pace ~${h1(vel())} pts</span></div>
+    <div class="kpi ${unest ? 'warn' : 'ok'}"><span class="sub">Not estimated</span><b>${unest}</b><span class="sub">in the sprint</span></div>
+    <div class="kpi"><span class="sub">Changes to make</span><b>${Object.keys(P).length + Object.keys(E).length + NT.length}</b><span class="sub">moves, estimates, new tasks</span></div>`;
+}
+function render() {
+  $('#crumb').innerHTML = `${esc(D.org)} / ${esc(D.project)} / Boards / <b>Sprint planning</b>`; $('#navproj').textContent = D.project;
+  $('#title').textContent = `Sprint planning: ${SPR[target].name}`;
+  $('#meta').innerHTML = `${fmtDate(SPR[target].start)} &ndash; ${fmtDate(SPR[target].finish)} &middot; ${Math.round(days(SPR[target]).length / 5)} week${days(SPR[target]).length > 5 ? 's' : ''}, ${days(SPR[target]).length} working days &middot; current sprint ${esc((SPR[curIdx] || {}).name || '-')}`;
+  $('#splen').value = String(Math.round(days(SPR[target]).length / 5));
+  renderMeeting(); renderKpis();
+  const v = STEPS[S.step][0];
+  if (v === 'capacity') renderCapacity(); else if (v === 'carry') renderCarry(); else if (v === 'poker') renderPoker(); else if (v === 'board') renderBoard(); else renderCommit();
+}
+
+// ---------- confetti ----------
+function confetti() {
+  const cv = $('#confetti'), ctx = cv.getContext('2d'); cv.width = innerWidth; cv.height = innerHeight;
+  const bits = Array.from({length: 160}, () => ({x: innerWidth / 2, y: innerHeight / 3, vx: (Math.random() - .5) * 14, vy: Math.random() * -12 - 4, r: Math.random() * 6 + 3, c: colors[Math.floor(Math.random() * colors.length)], a: Math.random() * 6}));
+  let n = 0; (function frame() { ctx.clearRect(0, 0, cv.width, cv.height);
+    bits.forEach(b => { b.vy += .35; b.x += b.vx; b.y += b.vy; b.a += .2; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a); ctx.fillStyle = b.c; ctx.fillRect(-b.r, -b.r / 2, b.r * 2, b.r); ctx.restore(); });
+    if (++n < 160) requestAnimationFrame(frame); else ctx.clearRect(0, 0, cv.width, cv.height); })();
+}
+
+// ---------- events ----------
+$('#sprint').innerHTML = SPR.map((s, i) => `<option value="${i}"${i <= curIdx ? ' disabled' : ''}>${esc(s.name)} - ${fmtDate(s.start)}</option>`).join('');
+$('#sprint').value = target;
+$('#sprint').onchange = e => { target = +e.target.value; save('target', target); render(); };
+$('#splen').onchange = e => { const L = load('len', {}); L[target] = +e.target.value; save('len', L); applyLengths();
+  $('#sprint').innerHTML = SPR.map((s, i) => `<option value="${i}"${i <= curIdx ? ' disabled' : ''}>${esc(s.name)} - ${fmtDate(s.start)}</option>`).join(''); $('#sprint').value = target;
+  render(); toast(`${SPR[target].name} is now ${e.target.value} week${e.target.value > 1 ? 's' : ''} (demo)`); };
+$('#q').oninput = renderBoard; $('#group').onchange = renderBoard;
+$('#swimrows').onchange = e => { swimRows = e.target.value; save('swimRows', swimRows); renderBoard(); };
+$('#reset').onclick = () => { if (!confirm('Start over? This clears the plan, estimates, votes and capacity in this browser and brings back the example sprint.')) return;
+  ['plan', 'est', 'cap', 'meeting', 'len', 'target', 'newtasks'].forEach(k => { try { localStorage.removeItem(KEY + '.' + k); } catch (e) {} }); location.reload(); };
+$('#export').onclick = () => {
+  const rows = [['ID', 'Title', 'Change', 'From', 'To']], name = i => i >= 0 ? SPR[i].path : D.project;
+  Object.keys(P).forEach(id => { const it = byId.get(+id), p = P[id]; if (!it) return;
+    if (p.sp !== it.sp) rows.push([it.id, it.title, 'Iteration', name(it.sp), name(p.sp)]);
+    if (p.who !== (it.assignee || '')) rows.push([it.id, it.title, 'Assigned to', it.assignee || '', p.who]); });
+  Object.keys(E).forEach(id => { const it = byId.get(+id); if (it) rows.push([it.id, it.title, 'Story points', it.points == null ? '' : it.points, E[id]]); });
+  NT.forEach(t => { const st = byId.get(t.parent); rows.push([t.parent, st ? st.title : '', `New ${TASK_KINDS[t.kind] ? TASK_KINDS[t.kind].label.toLowerCase() : ''} task`, '', `${t.title} | ${t.who || 'Unassigned'} | ${t.hrs} h`]); });
+  people.forEach(p => { const c = capacity(p); rows.push(['', p, 'Capacity per day (h)', '', c.hpd]); });
+  if (rows.length === 1) { toast('No changes yet.'); return; }
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = `sprint_plan_${SPR[target].name.replace(/\W+/g, '_')}.csv`; a.click();
+  toast(`Exported ${rows.length - 1} changes.`);
+};
+$('#theme').value = document.documentElement.dataset.theme || 'auto';
+$('#theme').onchange = e => { const t = e.target.value; try { localStorage.setItem('adomap.theme', JSON.stringify(t)); } catch (err) {}
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; };
+
+document.addEventListener('click', e => {
+  const mock = e.target.closest('[data-mock]'); if (mock) { e.preventDefault(); if (mock.dataset.mock) toast(`${mock.dataset.mock} isn't part of this demo - only the Sprint planning hub is mocked.`); return; }
+  const t = e.target.closest('button, [data-ready], [data-pick], a[data-step]'); if (!t) return;
+  const d = t.dataset;
+  if (d.bv) { boardView = d.bv; save('boardView', boardView); renderBoard(); }
+  else if (d.step != null && (t.classList.contains('step') || t.tagName === 'A')) { e.preventDefault(); goStep(+d.step); }
+  else if (d.ready != null) { if (S.ready[d.ready]) delete S.ready[d.ready]; else S.ready[d.ready] = 1; save('meeting', S); renderMeeting();
+    if (Object.keys(S.ready).length === people.length) toast('Everyone is ready - on to the next step!'); }
+  else if (d.add) { const it = byId.get(+d.add); setPlan(it.id, target, planned(it).who); }
+  else if (d.out) { const it = byId.get(+d.out); setPlan(it.id, -1, planned(it).who); }
+  else if (d.open) { openStory(+d.open); if (d.focus === 'qt') { const q = document.querySelector('#mbox .qt'); if (q) { q.scrollIntoView({block: 'center'}); q.querySelector('.qt-title').focus(); } } }
+  else if (d.qtkind) { const box = t.closest('.qt'), st = byId.get(+box.dataset.qt); box.outerHTML = quickTaskHtml(st, d.qtkind); }
+  else if (d.qtadd) {
+    const box = t.closest('.qt'), st = byId.get(+d.qtadd), title = box.querySelector('.qt-title').value.trim(), hrs = Math.max(0, +box.querySelector('.qt-hrs').value || 0);
+    if (!title) { box.querySelector('.qt-title').focus(); toast('Give the task a title.'); return; }
+    const task = {id: Math.max(9800, ...NT.map(x => x.id + 1)), parent: st.id, title, who: box.querySelector('.qt-who').value, hrs, kind: box.dataset.kind};
+    while (byId.has(task.id)) task.id++;
+    NT.push(task); save('newtasks', NT); addTaskItem(task);
+    toast(`Added "${title}" (${hrs} h${task.who ? ', ' + task.who : ''})`);
+    if (!$('#modal').hidden) openStory(st.id); render(); }
+  else if (d.qtdel) {
+    const id = +d.qtdel, tk = byId.get(id); if (!tk || !tk.isNewTask) return;
+    NT = NT.filter(x => x.id !== id); save('newtasks', NT);
+    const st = byId.get(tk.parent); if (st) st.children = st.children.filter(x => x !== id);
+    byId.delete(id); D.items.splice(D.items.indexOf(tk), 1);
+    if (!$('#modal').hidden && st) openStory(st.id); render(); }
+  else if (d.pop) { const q = pokerQueue(), i = q.findIndex(x => x.id === popId), n = q[i + +d.pop]; if (n) { poker = {id: n.id, votes: {}, shown: false}; renderPoker(); openStory(n.id); } }
+  else if (t.id === 'popclose') { closeStory(); }
+  else if (t.id === 'popwin') { storyWindow(popId); }
+  else if (d.pick) { poker = {id: +d.pick, votes: {}, shown: false}; renderPoker(); }
+  else if (d.vote) { if (poker.shown) return; poker.votes[d.vote] = d.v === '?' ? '?' : +d.v; renderPoker(); }
+  else if (t.id === 'reveal') { poker.shown = true; renderPoker(); }
+  else if (t.id === 'revote') { poker.votes = {}; poker.shown = false; renderPoker(); }
+  else if (t.id === 'skip') { nextPoker(); renderPoker(); }
+  else if (t.id === 'simulate') { const it = byId.get(poker.id), base = pts(it) != null ? pts(it) : [2, 3, 5, 8][it.id % 4];
+    people.forEach(p => { if (poker.votes[p] == null) { const i = DECK.indexOf(base) + Math.round((Math.random() - .5) * 1.6); poker.votes[p] = DECK[Math.max(0, Math.min(6, i))]; } }); renderPoker(); }
+  else if (d.agree) { E[poker.id] = +d.agree; save('est', E); toast(`#${poker.id} estimated at ${d.agree} points`); nextPoker(); renderKpis(); renderPoker(); }
+  else if (t.id === 'carryAll') { D.items.filter(it => isStory(it) && it.sp === target - 1 && it.bucket !== 'done').forEach(it => { P[it.id] = {sp: target, who: planned(it).who}; }); save('plan', P); render(); }
+  else if (d.weekoff != null || d.teamweek != null) {
+    const weeks = JSON.parse($('#capgrid').dataset.weeks || '[]'), c = capOf(), wk = weeks[+(d.wk != null ? d.wk : d.teamweek)] || [];
+    const map = d.weekoff != null ? (c.off[d.weekoff] = c.off[d.weekoff] || {}) : c.team;
+    const allOff = wk.every(day => map[day] === 'full');
+    wk.forEach(day => { if (allOff) delete map[day]; else map[day] = 'full'; });
+    save('cap', C); render(); }
+  else if (d.fist) { S.fist[d.fist] = +d.n; save('meeting', S); renderCommit(); }
+  else if (t.id === 'simfist') { people.forEach(p => { if (!S.fist[p]) S.fist[p] = 3 + Math.floor(Math.random() * 3); }); save('meeting', S); renderCommit(); }
+  else if (t.id === 'commit') { S.committed[target] = true; save('meeting', S); renderCommit(); confetti(); toast(`${SPR[target].name} committed!`); }
+});
+document.addEventListener('change', e => { const d = e.target.dataset, c = capOf();
+  if (d.hpd != null) { c.hpd[d.hpd] = Math.max(0, +e.target.value || 0); }
+  else if (d.off != null) { c.off[d.off] = c.off[d.off] || {}; if (e.target.value) c.off[d.off][d.day] = e.target.value; else delete c.off[d.off][d.day]; }
+  else if (d.team != null) { if (e.target.value) c.team[d.team] = e.target.value; else delete c.team[d.team]; }
+  else if (d.carry != null) { const it = byId.get(+d.carry); setPlan(it.id, e.target.checked ? target : it.sp, planned(it).who); return; }
+  else return;
+  save('cap', C); render(); });
+document.addEventListener('dragstart', e => { const c = e.target.closest('.wi[draggable]'); if (!c) return; e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('dragging'); });
+document.addEventListener('dragend', e => { const c = e.target.closest('.wi'); if (c) c.classList.remove('dragging'); $$('.lane.over, td.cell.over').forEach(l => l.classList.remove('over')); });
+document.addEventListener('dragover', e => { const l = e.target.closest('.lane, #backlog, td.cell'); if (!l) return; e.preventDefault(); $$('.lane.over, td.cell.over').forEach(x => x !== l && x.classList.remove('over')); if (!l.id) l.classList.add('over'); });
+document.addEventListener('drop', e => { const l = e.target.closest('.lane, #backlog, td.cell'); if (!l) return; e.preventDefault(); l.classList.remove('over');
+  const it = byId.get(+e.dataTransfer.getData('text/plain')); if (!it) return;
+  if (l.classList.contains('cell')) { setPlan(it.id, +l.dataset.sp, swimRows === 'person' ? l.dataset.row : planned(it).who); return; }
+  if (l.id === 'backlog') setPlan(it.id, -1, planned(it).who); else setPlan(it.id, target, l.dataset.who); });
+
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeStory(); });
+document.addEventListener('keydown', e => { if ($('#modal').hidden) return; if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.key !== 'Escape') return;
+  if (e.key === 'Escape') closeStory();
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const b = document.querySelector(`[data-pop="${e.key === 'ArrowRight' ? 1 : -1}"]`); if (b && !b.disabled) b.click(); } });
+// Example sprint opens as a draft plan: last sprint's unfinished work, then estimated stories with no
+// dependencies, until the team is at about 85% of capacity and nobody is over their own capacity.
+function prefill() {
+  const cap = people.reduce((a, p) => a + capacity(p).cap, 0), goal = cap * .85;
+  const total = () => [...work().values()].reduce((a, r) => a + r.task + r.est, 0);
+  const room = p => { const r = work().get(p) || {task: 0, est: 0}; return capacity(p).cap - r.task - r.est; };
+  D.items.filter(it => isStory(it) && it.sp === EX - 1 && it.bucket !== 'done').forEach(it => { P[it.id] = {sp: EX, who: planned(it).who}; });
+  const cand = D.items.filter(it => isStory(it) && it.bucket !== 'done' && it.bucket !== 'removed' && planned(it).sp !== EX &&
+    (planned(it).sp < 0 || planned(it).sp > curIdx) && pts(it) != null && !(needs.get(it.id) || []).length && ![...needs.values()].some(v => v.includes(it.id)))
+    .sort((a, b) => a.id - b.id);
+  for (const it of cand) {
+    if (total() >= goal * .98) break;
+    const prev = P[it.id];
+    P[it.id] = {sp: EX, who: planned(it).who || [...people].sort((a, b) => room(b) - room(a))[0]};
+    const w = work(), over = people.some(p => { const r = w.get(p) || {task: 0, est: 0}; return r.task + r.est > capacity(p).cap * .97; });
+    if (total() > goal * 1.03 || over) { if (prev) P[it.id] = prev; else delete P[it.id]; }
+  }
+}
+let freshExample = false;
+try { freshExample = localStorage.getItem(KEY + '.plan') === null; } catch (e) {}
+if (freshExample && EX >= 0 && target === EX && String(SPR[EX].start).slice(0, 10) === EX_START) { prefill(); save('plan', P); }
+
+// Collapsible navigation, remembered in this browser
+function setNav(min) {
+  $('.shell').classList.toggle('navmin', min);
+  $('#navtoggle').innerHTML = min ? '<span class="ic" style="--c:#605e5c">&raquo;</span>Expand' : '<span class="ic" style="--c:#605e5c">&laquo;</span>Collapse';
+  $('#navtoggle').title = min ? 'Expand the navigation' : 'Collapse the navigation';
+  try { localStorage.setItem('adomap.planning.nav', min ? 'min' : ''); } catch (e) {}
+}
+$$('.adonav .ni').forEach(a => { if (!a.title) a.title = a.textContent.trim(); });
+$('#navtoggle').onclick = $('#navtoggle2').onclick = () => setNav(!$('.shell').classList.contains('navmin'));
+try { setNav(localStorage.getItem('adomap.planning.nav') === 'min'); } catch (e) { setNav(false); }
+
+tick(); render();
+</script>
+</body>
+</html>

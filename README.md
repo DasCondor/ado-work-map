@@ -15,7 +15,7 @@ in an interactive page you can open in any browser.
 [![Latest release](https://img.shields.io/github/v/release/DasCondor/ado-work-map?label=release)](https://github.com/DasCondor/ado-work-map/releases/latest)
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
-### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Get the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
+### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Sprint planning demo](https://dascondor.github.io/ado-work-map/sprint-planning.html) &nbsp;&middot;&nbsp; [Get the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
 <img src="docs/images/delivery-map.png" alt="Delivery map: epics on the left, the selected epic's features and stories with progress bars on the right" width="900">
 
@@ -26,6 +26,17 @@ in an interactive page you can open in any browser.
 ---
 
 ## Latest updates
+
+### Preview &mdash; sprint planning live demo
+
+A look at where ADO Work Map could go next: a **sprint planning** hub for Azure DevOps, run as a guided team meeting. **[Try it](https://dascondor.github.io/ado-work-map/sprint-planning.html)** &mdash; it's a demo on sample data that runs only in your browser. It isn't in the extensions yet.
+
+- **Capacity check-in:** hours per day and time off per day &mdash; a full day, half a day or a few hours &mdash; plus team holidays, for sprints of 1 to 5 weeks. Each person's assigned work (task hours) is shown against their capacity.
+- **Sprint calendar:** who's in each day, week by week, and a burn-up of capacity against planned work with an 80&ndash;100% target band.
+- **Planning poker** with the full story &mdash; description, acceptance criteria, tasks and links &mdash; in a work item form, plus a team confidence vote to commit.
+- **Fill the sprint** in people lanes or swimlanes (backlog &times; sprints), with one-click **Validation** and **Assisting team member** tasks.
+
+<img src="docs/images/sprint-planning.png" alt="Sprint planning demo: capacity check-in with time off per day, for a 4-week sprint" width="900">
 
 ### 1.1.1 &mdash; heatmap tooltip fix
 
