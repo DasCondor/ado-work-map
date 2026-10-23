@@ -2195,24 +2195,33 @@ function renderHeatmap() {
     tip.innerHTML = html;
     tip.classList.toggle('pin', !!pin);
     tip.hidden = false;
+    // Keep the box inside the card (which scrolls sideways, so anything outside it is cut off):
+    // flip it left or above the pointer when there's no room, and give the card extra room
+    // underneath when the box is taller than the card itself
+    hm.style.paddingBottom = '';
+    const room = hm.clientHeight - 8, h = tip.offsetHeight;
+    if (h > room) hm.style.paddingBottom = (h - room + 16) + 'px';
     const box = hm.getBoundingClientRect();
     let x = e.clientX - box.left + hm.scrollLeft + 14, y = e.clientY - box.top + 14;
     if (x + tip.offsetWidth > hm.scrollLeft + box.width - 4) x = e.clientX - box.left + hm.scrollLeft - tip.offsetWidth - 10;
-    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    if (y + h > hm.clientHeight - 4) y = e.clientY - box.top - h - 10;
+    y = Math.max(4, Math.min(y, hm.clientHeight - h - 4));
+    tip.style.left = Math.max(hm.scrollLeft + 4, x) + 'px'; tip.style.top = y + 'px';
   };
+  const hide = () => { tip.hidden = true; hm.style.paddingBottom = ''; };
   hm.onmousemove = e => {
     if (pinned) return;
     const r = e.target.closest('rect[data-f]');
-    if (r) show(e, r, false); else tip.hidden = true;
+    if (r) show(e, r, false); else hide();
   };
   hm.onclick = e => {
-    if (e.target.closest('#hmtip .x')) { pinned = false; tip.hidden = true; return; }
+    if (e.target.closest('#hmtip .x')) { pinned = false; hide(); return; }
     if (e.target.closest('#hmtip')) return;   // a link in the pinned details
     const r = e.target.closest('rect[data-f]');
-    if (!r) { pinned = false; tip.hidden = true; return; }
+    if (!r) { pinned = false; hide(); return; }
     pinned = true; show(e, r, true);
   };
-  hm.onmouseleave = () => { if (!pinned) tip.hidden = true; };
+  hm.onmouseleave = () => { if (!pinned) hide(); };
 }
 
 function renderAll() {

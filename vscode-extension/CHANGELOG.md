@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Fixed: a pinned commit heatmap tooltip on a square low in the grid was cut off by the bottom of the heatmap card. It now opens above the pointer when there's no room below, and the card makes room for very tall ones
+
 ## 1.1.0
 
 - Every map (treemap, repo matrix, commit heatmap) can be narrowed to one sprint, with a banner showing the sprint, its dates and Previous / Next buttons, plus a Current sprint shortcut

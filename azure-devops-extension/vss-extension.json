@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "ado-work-map-boards",
   "publisher": "DasCondor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "name": "ADO Work Map",
   "description": "A Work Map hub in Boards: epics to tasks, every sprint, what changed, repos, a commit heatmap and a spider web of links. Uses your own access; data stays in your browser.",
   "public": false,

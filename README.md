@@ -27,6 +27,12 @@ in an interactive page you can open in any browser.
 
 ## Latest updates
 
+### 1.1.1 &mdash; heatmap tooltip fix
+
+- **Fixed:** clicking a square low in the commit heatmap pinned a tooltip that was cut off by the bottom of the card. It now opens above the pointer when there's no room below, so every link stays visible.
+
+Downloads: [release 1.1.1](https://github.com/DasCondor/ado-work-map/releases/tag/v1.1.1).
+
 ### 1.1.0 &mdash; maps by sprint, commit heatmap by person
 
 - **Every map can show one sprint.** Pick a sprint above the treemap, repo matrix or commit heatmap (or click **Current sprint**). A banner shows which sprint, its dates and **Previous / Next** buttons.
