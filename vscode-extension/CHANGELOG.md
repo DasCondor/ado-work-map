@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0 (preview)
+
+- Check Connection command: tests the token, project, team, sprints and permissions, and lists your teams if the team name is wrong
+- Report: a Needs attention tab, clearer labels, and between sprints the next sprint is shown as the upcoming sprint
+
 ## 1.4.6
 
 - Commit heatmap scales to the width of its column, with Top repos and Top people in a narrower column beside it

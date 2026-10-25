@@ -37,7 +37,7 @@ $manifest = @"
     <Description xml:space="preserve">$(& $esc $pkg.description)</Description>
     <Tags>$(& $esc (($pkg.keywords + 'vscode-extension') -join ','))</Tags>
     <Categories>$(& $esc ($pkg.categories -join ','))</Categories>
-    <GalleryFlags>Public</GalleryFlags>
+    <GalleryFlags>Public$(if ($pkg.preview) { ' Preview' })</GalleryFlags>
     <Properties>
       <Property Id="Microsoft.VisualStudio.Code.Engine" Value="$($pkg.engines.vscode)" />
       <Property Id="Microsoft.VisualStudio.Code.ExtensionDependencies" Value="" />

@@ -25,80 +25,15 @@ in an interactive page you can open in any browser.
 
 ---
 
-## Latest updates
+## What's supported
 
-### 1.4.6 &mdash; Commit heatmap uses the whole page
-
-- **Commit heatmap fills the page:** the heatmap scales to the full width of its column (up to twice its normal size), with Top repos and Top people in a narrower column beside it.
-- **By person, all sprints:** on wide screens the calendars sit side by side, so a team takes a few rows instead of one long column.
-- Resizing the window redraws the maps for the new width.
-- VS Code extension 1.4.6 bundles this script; the Azure DevOps extension is 1.4.6 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
-
-### 1.4.5 &mdash; A spread-out, readable spider web
-
-- **Spider web, spread out:** more room between items and a margin around every label, so nothing overlaps. Each story keeps its tasks close, while repos and related links pull only gently, so groups stay apart instead of forming one knot.
-- On big views zoomed out to fit, tasks, PRs, branches and commits show as dots; their names appear as you zoom in. Epics, features, stories and repos always keep their names.
-- **Fixed:** in the Azure DevOps hub (and the demo frame) the layout started before the canvas had its size, so it stayed a circle in the middle. It now fills the canvas both ways.
-- VS Code extension 1.4.5 bundles this script; the Azure DevOps extension is 1.4.5 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
-
-### 1.4.4 &mdash; Spider web uses the whole canvas
-
-- **Spider web:** the layout spreads to the shape of the canvas instead of settling into a circle in the middle, so on a wide screen the graph uses the full width and labels overlap far less. Small graphs, like one sprint, are widened once the layout finishes (skipped if you've moved or zoomed).
-- VS Code extension 1.4.4 bundles this script; the Azure DevOps extension is 1.4.4 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
-
-### 1.4.3 &mdash; Less empty space on Sprints and the commit heatmap
-
-- **Sprint detail:** By person sits beside the sprint strip and totals, filling the empty space at the top; the sprint's work runs full width below. On narrow screens it drops back under the totals.
-- **Commit heatmap:** Top repos and Top people sit in a column beside the heatmap (below it when the heatmap is too wide).
-- VS Code extension 1.4.3 bundles this script; the Azure DevOps extension is 1.4.3 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
-
-### 1.4.2 &mdash; Layout fixes, sprint map expand / collapse all
-
-- **Commit heatmap:** Top repos and Top people sit right under the totals, above the heatmap, instead of below it.
-- **Sprint detail:** By person spans the full width above the sprint's work, so there's no empty column beside the tree.
-- **Sprint map:** **Expand all** and **Collapse all** open or close every epic's features at once.
-- **Live demo:** clicking **Boards** in the side panel folds its pages, or opens them as a menu when the panel is collapsed, so you can switch hubs either way.
-- VS Code extension 1.4.2 bundles this script; the Azure DevOps extension is 1.4.2 too, from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension).
-
-### 1.4.1 &mdash; Filters that narrow each other, Technical Stories, sprint map links
-
-- **Filter bar:** people and tags are multiple choice, there's a persistent **Exclude tags** list (it survives Clear filters), and the area path can be saved as your default (**Open with this area path** inside the Area list). Every list only offers what the other filters leave: pick an area path and the Epic list shrinks to that area's epics. Lists longer than 5 get a search box.
-- **Sprints:** the sprint strip stays put while you scroll a sprint's work. In the sprint map, epics and features are links, and hovering a cell lists its stories, technical stories and bugs with a link to each.
-- **Technical Story** is a story type everywhere (delivery map, sprints, changes, maps) and its own kind in the spider web. If you pass your own `-Types`, add it there.
-- The report uses the full window width, and the demo runs on 4-week sprints (Sprint 15 is Oct 26 &ndash; Nov 20), matching the Azure DevOps extension's demo.
-- VS Code extension 1.4.1 bundles this script. The Azure DevOps extension with the same changes (and the new Sprint planning hub) is released from [ado-work-map-extension](https://github.com/DasCondor/ado-work-map-extension) as 1.4.1 too.
-
-### Preview &mdash; sprint planning live demo
-
-A look at where ADO Work Map could go next: a **sprint planning** hub for Azure DevOps, run as a guided team meeting. **[Try it](https://dascondor.github.io/ado-work-map/sprint-planning.html)** &mdash; it's a demo on sample data that runs only in your browser. It isn't in the extensions yet.
-
-- **Capacity check-in:** hours per day and time off per day &mdash; a full day, half a day or a few hours &mdash; plus team holidays, for sprints of 1 to 5 weeks. Each person's assigned work (task hours) is shown against their capacity.
-- **Sprint calendar:** who's in each day, week by week, and a burn-up of capacity against planned work with an 80&ndash;100% target band.
-- **Planning poker** with the full story &mdash; description, acceptance criteria, tasks and links &mdash; in a work item form, plus a team confidence vote to commit.
-- **Fill the sprint** in people lanes or swimlanes (backlog &times; sprints), with one-click **Validation** and **Assisting team member** tasks.
-
-The [live demo](https://dascondor.github.io/ado-work-map/) now opens as it would look installed: the Work Map and Sprint planning as hubs under **Boards** in an Azure DevOps-style frame, with a collapsible side panel and Azure DevOps colours. Switching between the two hubs happens in place, and each keeps its place.
-
-<img src="docs/images/sprint-planning.png" alt="Sprint planning demo: capacity check-in with time off per day, for a 4-week sprint" width="900">
-
-### 1.1.1 &mdash; heatmap tooltip fix
-
-- **Fixed:** clicking a square low in the commit heatmap pinned a tooltip that was cut off by the bottom of the card. It now opens above the pointer when there's no room below, so every link stays visible.
-
-Downloads: [release 1.1.1](https://github.com/DasCondor/ado-work-map/releases/tag/v1.1.1).
-
-### 1.1.0 &mdash; maps by sprint, commit heatmap by person
-
-- **Every map can show one sprint.** Pick a sprint above the treemap, repo matrix or commit heatmap (or click **Current sprint**). A banner shows which sprint, its dates and **Previous / Next** buttons.
-- **Commit heatmap by person.** Switch between **Everyone** and **By person**:
-  - **All sprints:** each person gets their own day-by-day calendar.
-  - **One sprint:** one large square per day, with weekends shaded and days still to come dashed.
-- **Tooltips on every square.** Hover for the date, the number of commits, and the people and repos involved. **Click** a square to pin it, with links to those commits in Azure DevOps.
-- **One person, one row.** Commits under different names or accounts, such as `First Last` and `First.Last.CTR`, are counted as one person. Commit data now keeps the part of the email before the @ (never the full address) for this. Run a full refresh to add it to days pulled before this update.
-
-<img src="docs/images/commit-heatmap-sprint.png" alt="Commit heatmap narrowed to the current sprint: a banner with the sprint and its dates, one row per person with a square per day, and a pinned tooltip linking to the commits in Azure DevOps" width="900">
-
-Downloads: [release 1.1.0](https://github.com/DasCondor/ado-work-map/releases/tag/v1.1.0) (VS Code and Azure DevOps extensions). Full history: [releases](https://github.com/DasCondor/ado-work-map/releases) and the [VS Code extension changelog](vscode-extension/CHANGELOG.md).
+| | PowerShell script + HTML report | VS Code extension | Azure DevOps extension |
+|---|---|---|---|
+| Work Map report: Needs attention, delivery map, sprints, changes, maps, spider web | Supported | Supported | Supported |
+| Access | Read-only (PAT or `az login`) | Read-only (PAT in VS Code secret storage) | Your own sign-in; writes only from Sprint planning's **Save plan** |
+| Connection check | `-Check` | **Check Connection** command | Not needed (uses your sign-in) |
+| Sprint planning | &mdash; | &mdash; | Preview: **Save plan** is off until you turn it on (not yet validated against a live organization); votes are entered on one shared screen |
+| Live demo | Sample data only | | |
 
 ## Why
 
@@ -128,6 +63,12 @@ Downloads: [release 1.1.0](https://github.com/DasCondor/ado-work-map/releases/ta
 
 A filter bar (search, epic, person, area, tag) sits above every tab and applies to all of them. Pick light, dark or auto in the header. Every `#1234` is a link straight to the work item in Azure DevOps.
 
+### Needs attention
+
+The first tab: what to look at before anything else. Unassigned work in the current sprint, work waiting on an unfinished predecessor, unfinished work still in a sprint that has ended, items with no recent updates, and stories without an estimate, acceptance criteria or a parent. Every finding shows why it was flagged, with the dates and a link to the item; every check says what it can't see. Turn checks off under **Checks** (remembered in this browser); the filter bar applies.
+
+<img src="docs/images/needs-attention.png" alt="Needs attention: checks for unassigned, blocked and stranded work, each finding with its evidence and a link" width="900">
+
 ### Delivery map
 
 What's accomplished and what's left, from epic down to task. Pick an epic on the left to see its features on the right; use **Collapse to** Epic / Feature / Story / Task to choose how deep to look. Filter to *Accomplished*, *Yet to do* or *Current sprint*. A progress-over-time chart builds up from each run (or backfill it from Analytics with `-PullHistory`).
@@ -140,7 +81,7 @@ Every sprint on a timeline. Open one to see its numbers, **work by person** (cli
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/velocity.png" alt="Velocity chart: done vs planned points per sprint with a rolling average"><br><b>Velocity</b> &mdash; done vs planned per sprint, with the average of the last six.</td>
+<td width="50%"><img src="docs/images/velocity.png" alt="Velocity chart: done vs planned points per sprint with a rolling average"><br><b>Velocity</b> &mdash; done vs. what's in each sprint now, with the average of the last six. There's no start-of-sprint baseline, so work moved out of a sprint isn't counted.</td>
 <td width="50%"><img src="docs/images/sprint-map.png" alt="Sprint map: epics and features down the side, sprints across the top"><br><b>Sprint map</b> &mdash; epics and features against sprints, so you can see where work landed and what's coming.</td>
 </tr>
 </table>
@@ -198,8 +139,10 @@ The connections: work items, their parent/child, related and dependency links, a
    set "ADO_PROJECT=Your Project"
    set "ADO_PAT_VALUE=<your token>"
    ```
+   `ADO_ORG` can also be your project's address, pasted from the browser (`https://dev.azure.com/your-org/Your Project`): the organization and project are taken from it.
    Optional settings (team, epics, area path, history days and more) are documented right there in the file.
-4. Double-click **`run_ado_work_map.cmd`**. The report opens from `ado_report\ado_work_map.html`.
+4. Check the connection (reads only): `run_ado_work_map.cmd -Check`. It tests the token, project, team, sprints and permissions, and lists your teams if `ADO_TEAM` is wrong.
+5. Double-click **`run_ado_work_map.cmd`**. The report opens from `ado_report\ado_work_map.html`. For a quicker first pull, set `ADO_COMMIT_DAYS=0` to skip commit history.
 
 Want a look first? No Azure DevOps needed:
 
@@ -400,6 +343,12 @@ The script reads sprints from the team `<project> Team`. If your team has a diff
 The cache belongs to one scope. When the scope changes, the next run pulls everything once, then goes back to pulling only changes.
 
 </details>
+
+## Latest updates
+
+**1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+
+Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 
 ## License
 

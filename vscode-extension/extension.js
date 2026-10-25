@@ -14,6 +14,7 @@ let ctx, output, statusItem, homeView, reportPanel, autoTimer;
 const job = { proc: null, action: '', label: '', started: null, exit: null, lastLine: '' };
 
 const ACTIONS = {
+  check: { label: 'Check connection', args: ['-Check'], needsAdo: true },
   pull: { label: 'Pull changes', args: [], needsAdo: true },
   full: { label: 'Full refresh', args: ['-Full'], needsAdo: true },
   rebuild: { label: 'Rebuild report', args: ['-Offline'], needsAdo: false },
@@ -327,6 +328,7 @@ function activate(context) {
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   context.subscriptions.push(output, statusItem,
     vscode.window.registerWebviewViewProvider('adoWorkMap.home', new HomeProvider(), { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand('adoWorkMap.check', () => run('check').then(() => output.show(true))),
     vscode.commands.registerCommand('adoWorkMap.pull', () => run('pull')),
     vscode.commands.registerCommand('adoWorkMap.fullRefresh', () => run('full')),
     vscode.commands.registerCommand('adoWorkMap.rebuild', () => run('rebuild')),

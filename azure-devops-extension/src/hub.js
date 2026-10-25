@@ -19,7 +19,7 @@ const TYPE_COLORS = {
 const CACHE_FIELDS = ['System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
   'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
   'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
-  'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork'];
+  'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria'];
 const CACHE_RELS = ['System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink'];
 const MAX_CHANGES = 20000;
 
@@ -187,6 +187,7 @@ function toCacheItem(w) {
     let v = (w.fields || {})[k];
     if (v == null) continue;
     if (k === 'System.AssignedTo') v = {displayName: String(v.displayName || '')};
+    else if (k === 'Microsoft.VSTS.Common.AcceptanceCriteria') { if (!String(v).replace(/<[^>]*>|&nbsp;/g, '').trim()) continue; v = 1; }   // only whether there is any
     else if (typeof v !== 'number') v = String(v);
     f[k] = v;
   }
@@ -503,7 +504,9 @@ function sprintList(iterations, raw) {
     }
     if (!covered) { list.push({name: p.split('\\').pop(), path: p, start: '', finish: '', timeFrame: ''}); known.add(p.toLowerCase()); }
   }
-  const current = list.find(s => s.timeFrame === 'current') || null;
+  // Between sprints (e.g. the weekend before the next one starts): the next sprint, if it starts within a week
+  const current = list.find(s => s.timeFrame === 'current') ||
+    list.filter(s => s.timeFrame === 'future' && s.start && Date.parse(s.start) < Date.now() + 7 * 864e5).sort((a, b) => a.start < b.start ? -1 : 1)[0] || null;
   const natural = s => String(s.name).replace(/\d+/g, m => m.padStart(8, '0'));
   const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   list.sort((a, b) => cmp(a.start || '9999', b.start || '9999') || cmp(natural(a), natural(b)));
@@ -527,7 +530,7 @@ function buildModel(raw, cats, sprintInfo, repos, prs) {
       points: points == null ? null : points,
       remaining: f['Microsoft.VSTS.Scheduling.RemainingWork'] == null ? null : f['Microsoft.VSTS.Scheduling.RemainingWork'],
       completed: f['Microsoft.VSTS.Scheduling.CompletedWork'] == null ? null : f['Microsoft.VSTS.Scheduling.CompletedWork'],
-      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''),
+      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''), ac: !!f['Microsoft.VSTS.Common.AcceptanceCriteria'],
       inSprint: !!(sprintPath && (itPath.toLowerCase() === sprintPath.toLowerCase() || itPath.toLowerCase().startsWith(sprintPath.toLowerCase() + '\\'))),
       url: `${ctx.projUrl}/_workitems/edit/${w.id}`, parent: null, children: []
     });
@@ -683,7 +686,7 @@ function buildModel(raw, cats, sprintInfo, repos, prs) {
     generated: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
     sprint, sprints: sprintInfo.list, changes: [], runUtc: '', summary,
     items: [...items.values()].sort((a, b) => a.id - b.id), roots,
-    graph: {nodes: [...nodes.values()], edges}, typeColors: TYPE_COLORS, history: []
+    graph: {nodes: [...nodes.values()], edges}, typeColors: TYPE_COLORS, history: [], acRead: true
   };
 }
 
@@ -706,7 +709,7 @@ async function pull(full) {
   const cache = new Map();
   let since = null, prevRunUtc = '';
   const wc = saved.wi;
-  if (wc && wc.version === 2 && wc.signature === signature) {
+  if (wc && wc.version === 3 && wc.signature === signature) {   // v3 added acceptance criteria
     for (const ci of wc.items) cache.set(ci.id, ci);
     prevRunUtc = wc.lastRunUtc;
     since = minusMinutes(wc.lastRunUtc, 10);
@@ -716,7 +719,7 @@ async function pull(full) {
 
   await syncWorkItems(cache, since, runUtc, changes, full, S);
   const raw = [...cache.values()];
-  await store.set(key('wi'), {version: 2, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
+  await store.set(key('wi'), {version: 3, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
 
   step('Reading state categories, sprints and repos...');
   const typeNames = [...new Set(raw.map(w => w.fields['System.WorkItemType']).filter(Boolean))].sort();
@@ -819,6 +822,8 @@ function showError(e, hasData) {
   const msg = e && e.message || String(e);
   let hint = '';
   if (e && e.status === 401) hint = 'Azure DevOps refused the request. Reload the page; if it keeps happening, ask an admin to re-approve the extension (its permissions may have changed).';
+  else if (e && e.status === 403) hint = 'Your account doesn\'t have permission to read this. Ask a project admin for access to the project or team, or pick another team in Settings.';
+  else if (e && e.status === 404) hint = 'Not found: the team or area path in Settings may have been renamed or removed.';
   else if (/TF51011|TF401019|area path/i.test(msg)) hint = 'Check the area path in Settings.';
   $('#hub-error').innerHTML = '<b>Couldn\'t pull from Azure DevOps.</b> ' + escapeHtml(msg) + (hint ? '<br>' + escapeHtml(hint) : '') +
     (hasData ? '<br>Showing the data saved from the last pull.' : '');

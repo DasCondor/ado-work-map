@@ -2,7 +2,8 @@
   "name": "ado-work-map",
   "displayName": "ADO Work Map",
   "description": "Self-contained Azure DevOps work map: delivery map, sprints, changes, maps and a spider web of your work and repos, in one offline HTML report.",
-  "version": "1.4.6",
+  "version": "1.5.0",
+  "preview": true,
   "publisher": "DasCondor",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -27,6 +28,7 @@
       "adoWorkMap": [{ "type": "webview", "id": "adoWorkMap.home", "name": "Launch pad" }]
     },
     "commands": [
+      { "command": "adoWorkMap.check", "title": "Check Connection", "category": "ADO Work Map" },
       { "command": "adoWorkMap.pull", "title": "Pull Changes", "category": "ADO Work Map", "icon": "$(sync)" },
       { "command": "adoWorkMap.fullRefresh", "title": "Full Refresh", "category": "ADO Work Map" },
       { "command": "adoWorkMap.rebuild", "title": "Rebuild Report (no Azure DevOps calls)", "category": "ADO Work Map" },

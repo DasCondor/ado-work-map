@@ -52,6 +52,10 @@
     .\ado_work_map.ps1 -Setup
     First-time setup: create the report folders and run_ado_work_map.cmd from the example.
 .EXAMPLE
+    .\ado_work_map.ps1 -Org https://dev.azure.com/contoso/Phoenix -Check
+    Check the connection: token, project, team, sprints and permissions, in plain language.
+    Reads only; lists your teams if the team name is wrong.
+.EXAMPLE
     .\ado_work_map.ps1 -Org contoso -Project Phoenix -Team "Phoenix Team" -SaveConfig
 .EXAMPLE
     .\ado_work_map.ps1
@@ -108,6 +112,7 @@ param(
     [switch]$ClearArchive,
     [switch]$IncludeHistory,
     [switch]$Setup,
+    [switch]$Check,
     [switch]$Serve,
     [int]$Port = 8765,
     [switch]$Demo
@@ -215,7 +220,14 @@ function Invoke-Ado {
     catch {
         $detail = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
         if ($detail.Length -gt 400) { $detail = $detail.Substring(0, 400) }
-        throw "$Method $Url failed: $detail"
+        $code = 0; try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+        $hint = switch ($code) {
+            401 { 'Azure DevOps rejected the credentials: the PAT is wrong, expired, or for another organization. ' }
+            403 { 'Your account or PAT is missing a permission for this. ' }
+            404 { 'Not found: check the organization, project and team names, and that your account can open them. ' }
+            default { '' }
+        }
+        throw "$Method $Url failed$(if ($code) { " ($code)" }): $hint$detail"
     }
     # A bad or expired PAT gets a 203 with an HTML sign-in page
     if ($r -is [string] -and $r.TrimStart().StartsWith('<')) { throw 'Azure DevOps returned a sign-in page - check the PAT / az login.' }
@@ -223,6 +235,47 @@ function Invoke-Ado {
 }
 
 function Get-WiqlQuoted([string]$s) { $s.Replace("'", "''") }
+
+function Test-AdoAccess {
+    # First-run check, read-only: what works, and what to change for anything that doesn't
+    $script:fixes = 0
+    $show = { param($ok, $what, $detail)
+        if ($ok) { Write-Host "  ok    $what$(if ($detail) { ": $detail" })" }
+        else { $script:fixes++; Write-Host "  FIX   $what`: $detail" -ForegroundColor Yellow } }
+    Write-Host "Checking $ProjUrl (read-only)"
+    try { $p = Invoke-Ado "$BaseUrl/_apis/projects/$([uri]::EscapeDataString($Project))"; & $show $true 'Project' $p.name }
+    catch { & $show $false 'Project' "$_"; Write-Host '        Nothing else can be checked until the project opens.'; return }
+    try {
+        $null = Invoke-Ado "$ProjUrl/_apis/wit/wiql" -Method POST -Body @{ query = 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project' } -Query @{ '$top' = 1 }
+        & $show $true 'Work items' 'can read'
+    }
+    catch { & $show $false 'Work items' "$_ -> the PAT needs Work Items (Read)" }
+    $teams = @()
+    try { $teams = @((Invoke-Ado "$BaseUrl/_apis/projects/$([uri]::EscapeDataString($Project))/teams" -Query @{ '$top' = 500 }).value | ForEach-Object { [string]$_.name } | Sort-Object); & $show $true 'Teams' "$($teams.Count) in this project" }
+    catch { & $show $false 'Teams' "$_ -> the PAT needs Project and Team (Read)" }
+    $teamName = if ($Team) { $Team } else { "$Project Team" }
+    if ($teams.Count -and $teams -notcontains $teamName) {
+        & $show $false "Team '$teamName'" "not found$(if (-not $Team) { ' (that is the default name; none was set)' }). Set ADO_TEAM in run_ado_work_map.cmd (or -Team) to one of: $($teams -join '; ')"
+    }
+    else {
+        try {
+            $its = @((Invoke-Ado "$ProjUrl/$([uri]::EscapeDataString($teamName))/_apis/work/teamsettings/iterations").value)
+            $cur = $its | Where-Object { $_.attributes -and $_.attributes.timeFrame -eq 'current' } | Select-Object -First 1
+            if ($its.Count) { & $show $true "Sprints for '$teamName'" "$($its.Count)$(if ($cur) { ", current: $($cur.name)" } else { ', none running today' })" }
+            else { & $show $false "Sprints for '$teamName'" 'the team has no sprints selected: Project settings > Team configuration > Iterations' }
+        }
+        catch { & $show $false "Sprints for '$teamName'" "$_" }
+    }
+    try { $r = @((Invoke-Ado "$ProjUrl/_apis/git/repositories").value); & $show $true 'Code' "$($r.Count) repositories (for pull requests, branches, commits)" }
+    catch { & $show $false 'Code' "$_ -> add Code (Read) to the PAT, or ignore: only the repo maps, heatmap and code links need it" }
+    $odata = if ($ServerUrl -match '^https://dev\.azure\.com') { "https://analytics.dev.azure.com/$([uri]::EscapeDataString($Org))/$([uri]::EscapeDataString($Project))" } else { $ProjUrl }
+    try { $null = Invoke-Ado "$odata/_odata/v4.0-preview/WorkItems?`$top=1&`$select=WorkItemId" -NoApiVersion; & $show $true 'Analytics' 'can read (used only by -PullHistory)' }
+    catch { Write-Host "  note  Analytics: not readable - only -PullHistory needs it (add Analytics (Read) to the PAT)." }
+    Write-Host ''
+    Write-Host "Data is saved in $OutDir (the PAT never is)."
+    if ($script:fixes) { Write-Host "$($script:fixes) thing(s) to fix above." -ForegroundColor Yellow; exit 2 }
+    Write-Host 'All set. Next: pull your data (run_ado_work_map.cmd, or Pull changes in the launch pad).'
+}
 
 function Get-ScopeIds {
     param([string]$ChangedSince)
@@ -438,7 +491,7 @@ function ConvertTo-Hashtable($Dict) {
 $CacheFields = @('System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
     'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
     'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
-    'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork')
+    'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria')
 $CacheRels = @('System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink')
 
 function ConvertTo-CacheItem($w) {
@@ -448,6 +501,8 @@ function ConvertTo-CacheItem($w) {
         $v = $w.fields.$k
         if ($null -eq $v) { continue }
         if ($k -eq 'System.AssignedTo') { $v = @{ displayName = [string]$v.displayName } }
+        elseif ($k -eq 'Microsoft.VSTS.Common.AcceptanceCriteria') {   # only whether there is any, not the text
+            if (([regex]::Replace([string]$v, '<[^>]*>|&nbsp;', '')).Trim()) { $v = 1 } else { continue } }
         elseif ($v -is [datetime]) { $v = $v.ToUniversalTime().ToString('o') }
         elseif ($v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal]) { $v = [double]$v }
         else { $v = [string]$v }
@@ -599,6 +654,11 @@ function Get-SprintList($Iterations, $Raw) {
         if (-not $current) { $current = @{ name = ($Iteration -split '\\')[-1]; path = $Iteration; start = ''; finish = ''; timeFrame = 'current' }; $list.Add($current) }
     }
     else { $current = $list | Where-Object { $_.timeFrame -eq 'current' } | Select-Object -First 1 }
+    # Between sprints (e.g. the weekend before the next one starts): the next sprint, if it starts within a week
+    if (-not $current) {
+        $current = $list | Where-Object { $_.timeFrame -eq 'future' -and $_.start -and ([datetime]$_.start).ToUniversalTime() -lt $now.AddDays(7) } |
+            Sort-Object { $_.start } | Select-Object -First 1
+    }
     $natural = { [regex]::Replace([string]$_.name, '\d+', { param($m) $m.Value.PadLeft(8, '0') }) }
     $sorted = @($list | Sort-Object @{ e = { if ($_.start) { $_.start } else { '9999' } } }, @{ e = $natural })
     return @{ list = $sorted; current = $current }
@@ -765,6 +825,7 @@ function Build-Model($Raw, $Cats, $SprintInfo, $Repos, $PrDetails) {
             created   = [string]$f.'System.CreatedDate'
             changed   = [string]$f.'System.ChangedDate'
             closed    = [string]$f.'Microsoft.VSTS.Common.ClosedDate'
+            ac        = [bool]$f.'Microsoft.VSTS.Common.AcceptanceCriteria'
             inSprint  = [bool]($sprintPath -and ($itPath -eq $sprintPath -or $itPath.StartsWith("$sprintPath\", [StringComparison]::OrdinalIgnoreCase)))
             url       = "$ProjUrl/_workitems/edit/$id"
             parent    = $null
@@ -1084,7 +1145,10 @@ function New-DemoData {
                 elseif ($r -lt ($p + 0.2)) { $state = Pick @('Active', 'Active', 'Resolved', 'New'); $iter = $current }
                 else { $state = 'New'; $iter = Pick (@($sprints[4..5]) + $Project) }
                 $r2 = $rnd.NextDouble(); $stype = if ($r2 -lt 0.15) { 'Bug' } elseif ($r2 -lt 0.3) { 'Technical Story' } else { 'User Story' }
-                $story = New-Item2 $stype "$(Pick $verbs) $($fTitle.ToLower()) part $($s + 1)" $feat $state $iter @{ 'Microsoft.VSTS.Scheduling.StoryPoints' = (Pick @(1, 2, 3, 5, 8)) }
+                $sx = @{}
+                if ($rnd.NextDouble() -lt 0.85) { $sx['Microsoft.VSTS.Scheduling.StoryPoints'] = Pick @(1, 2, 3, 5, 8) }
+                if ($rnd.NextDouble() -lt 0.75) { $sx['Microsoft.VSTS.Common.AcceptanceCriteria'] = 1 }
+                $story = New-Item2 $stype "$(Pick $verbs) $($fTitle.ToLower()) part $($s + 1)" $feat $state $iter $sx
                 $branch = "feature/$($story.id)-" + $fTitle.ToLower().Replace('&', 'and').Replace(' ', '-')
                 if ($state -ne 'New') {
                     Add-Art $story 'Ref' $repo "GB$branch"
@@ -1117,6 +1181,15 @@ function New-DemoData {
     for ($x = 0; $x -lt 4; $x++) {
         $a = Pick $stories; $b = Pick $stories
         if ($a.id -ne $b.id) { $a.relations.Add(@{ rel = 'System.LinkTypes.Dependency-Forward'; url = (WiUrl $b.id) }) }
+    }
+    # Something for each Needs attention check to find, in the running sprint and the next one (current between sprints)
+    foreach ($sp in @($sprints[3], $sprints[4])) {
+        $t = @($raw | Where-Object { $_.fields.'System.WorkItemType' -eq 'Task' -and $_.fields.'System.IterationPath' -eq $sp -and $_.fields.'System.State' -ne 'Closed' }) | Select-Object -First 1
+        if ($t) { $t.fields.Remove('System.AssignedTo') }
+        $s = @($stories | Where-Object { $_.fields.'System.IterationPath' -eq $sp -and $_.fields.'System.State' -ne 'Closed' }) | Select-Object -First 1
+        $p = @($stories | Where-Object { $_.fields.'System.State' -eq 'New' -and $_.fields.'System.IterationPath' -ne $sp }) | Select-Object -First 1
+        if ($s -and $p) { $p.relations.Add(@{ rel = 'System.LinkTypes.Dependency-Forward'; url = (WiUrl $s.id) }); $s.fields.Remove('Microsoft.VSTS.Common.AcceptanceCriteria') }
+        [void](New-Item2 'User Story' 'Spike: compare offline sync libraries' $null 'New' $sp @{})
     }
     # A month of change-log entries, as if the script had run every few days
     $changes = New-Object 'Collections.Generic.List[object]'
@@ -1270,6 +1343,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{bac
 .sp.tf-current b::after{content:" \2022 now";color:var(--accent);font-size:11px}
 .sp.tf-past{opacity:.85}
 .sp-people,.sp-work{margin-top:12px}
+nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:11px}
+.acheck{margin-bottom:12px} .acheck>summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:4px 0}
+.acheck>summary h3{display:inline;margin:0} .acheck .why{margin:2px 0 8px} .acheck td.ev{max-width:520px}
+.acheck .lim{font-style:italic}
+#a-checks .menu input[type=number]{width:60px}
 @media (min-width:901px){
   #sprints.det.on{display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,32%,560px);column-gap:12px;align-items:start}
   #sprints.det #sbody{display:contents}
@@ -1347,6 +1425,7 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
   <label class="sub">Theme <select id="theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
 </header>
 <nav>
+  <button data-tab="attention">Needs attention<span class="ncount" id="attnN" hidden></span></button>
   <button class="on" data-tab="map">Delivery map</button>
   <button data-tab="sprints">Sprints</button>
   <button data-tab="changes">Changes</button>
@@ -1390,6 +1469,14 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
       <div class="card tree" id="tree"></div>
     </div>
   </div>
+</section>
+
+<section id="attention">
+  <div class="toolbar">
+    <span class="sub" id="ainfo"></span><span style="flex:1"></span>
+    <details class="pick" id="a-checks"><summary>Checks</summary><div class="menu" id="a-menu"></div></details>
+  </div>
+  <div id="abody"></div>
 </section>
 
 <section id="sprints">
@@ -1472,6 +1559,10 @@ const num = v => Number(v) || 0;
 
 // ---------- derived data ----------
 const sprintIndex = new Map(SPR.map((s, i) => [s.path.toLowerCase(), i]));
+if (D.sprint && !D.sprint.path) D.sprint = null;   // no current sprint arrives as an empty object
+// Between sprints the next one stands in for the current one: say "upcoming", not "current"
+const curWord = D.sprint && D.sprint.timeFrame === 'future' ? 'upcoming' : 'current';
+const curSprintLabel = () => D.sprint ? `${curWord} sprint: <b>${esc(D.sprint.name)}</b>${curWord === 'upcoming' && D.sprint.start ? ` (starts ${fmtDate(D.sprint.start)})` : ''}` : '';
 const curIdx = D.sprint && sprintIndex.has(D.sprint.path.toLowerCase()) ? sprintIndex.get(D.sprint.path.toLowerCase()) : -1;
 D.items.forEach(it => {
   let p = (it.iteration || '').toLowerCase(), idx = -1;
@@ -1620,7 +1711,10 @@ function makeTree(el, o) {
 // ---------- header ----------
 $('#title').textContent = D.project + ' - Work Map';
 $('#meta').innerHTML = `${esc(D.org)} / <a href="${esc(D.projectUrl)}" target="_blank" rel="noopener">${esc(D.project)}</a> &middot; ${D.items.length.toLocaleString()} work items &middot; ${SPR.length} sprints &middot; data pulled ${esc(fmtWhen(D.runUtc) || D.generated)}` +
-  (D.sprint ? ` &middot; current sprint: <b>${esc(D.sprint.name)}</b>` : '');
+  (D.sprint ? ` &middot; ${curSprintLabel()}` : '');
+// Old data looks like current data, so say how old it is
+{ const age = D.demo ? 0 : Math.floor((Date.now() - Date.parse(D.runUtc)) / 864e5);
+  if (age >= 2) $('#meta').insertAdjacentHTML('beforeend', ` &middot; <b style="color:#c27c00">data is ${age} days old</b>`); }
 // Demo data: links can't open real work items, so say so instead of going to a dead page
 if (D.demo) {
   $('#title').innerHTML = esc(D.project) + ' - Work Map <span class="demo-pill">DEMO DATA</span>';
@@ -1632,7 +1726,7 @@ if (D.demo) {
   window.open = () => { note(msg); return null; };
 }
 // Links can open a tab directly: ado_work_map.html#/sprints (or #/maps:dark)
-let activeTab = location.hash.replace(/^#\/?/, '').split(':')[0] || store.get('tab', 'map');
+let activeTab = location.hash.replace(/^#\/?/, '').split(':')[0] || store.get('tab', 'attention');
 function showTab(t) {
   if (!$('#' + t)) t = 'map';
   activeTab = t; store.set('tab', t);
@@ -1757,7 +1851,7 @@ function renderSprints() {
   if (!SPR.length) { $('#strip').innerHTML = ''; $('#sbody').innerHTML = '<p class="sub">No sprints found. Check -Team (the team must have sprints selected) or -Iteration.</p>'; return; }
   const st = sprintStats();
   $('#strip').innerHTML = SPR.map((s, i) => { const x = st[i], w = x.tasks.done + x.tasks.active + x.tasks.new ? x.tasks : x.work;
-    return `<button class="sp tf-${esc(s.timeFrame || 'none')}${i === selSprint ? ' on' : ''}" data-i="${i}"><b class="t">${esc(s.name)}</b><span class="sub">${s.start ? fmtDate(s.start) + ' &ndash; ' + fmtDate(s.finish) : 'no dates'}</span>${bar(w)}<span class="sub">${w.done}/${w.done + w.active + w.new} done${x.pts ? ' &middot; ' + x.ptsDone + '/' + x.pts + ' pts' : ''}</span></button>`; }).join('');
+    return `<button class="sp tf-${esc(s.timeFrame || 'none')}${i === selSprint ? ' on' : ''}" data-i="${i}"><b class="t">${esc(s.name)}</b><span class="sub">${s.start ? fmtDate(s.start) + ' &ndash; ' + fmtDate(s.finish) : 'no dates'}</span>${bar(w)}<span class="sub">${w.done}/${w.done + w.active + w.new} ${w === x.tasks ? 'tasks' : 'items'} done${x.pts ? ' &middot; ' + x.ptsDone + '/' + x.pts + ' pts' : ''}</span></button>`; }).join('');
   // Centre the selected sprint in the strip (scroll the strip only, never the page)
   const strip = $('#strip'), on = $('#strip .sp.on');
   if (on && !renderSprints.scrolled && strip.clientWidth) { strip.scrollLeft = on.offsetLeft - strip.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2; renderSprints.scrolled = true; }
@@ -1817,7 +1911,7 @@ function renderSprintDetail(st) {
 }
 
 function renderVelocity(st) {
-  $('#sinfo').textContent = 'Done vs planned per sprint (story points, or stories and bugs when points are not used)';
+  $('#sinfo').textContent = "Done vs. what is in each sprint now (story points, or stories and bugs when points aren't used). There is no start-of-sprint baseline, so work moved out of a sprint isn't counted.";
   const usePts = st.some(x => x.pts > 0);
   const vals = SPR.map((s, i) => ({s, i, done: usePts ? st[i].ptsDone : st[i].work.done, all: usePts ? st[i].pts : st[i].work.done + st[i].work.active + st[i].work.new}))
     .filter(v => v.all > 0 || v.s.timeFrame === 'current');
@@ -1829,14 +1923,14 @@ function renderVelocity(st) {
   const past = vals.filter(v => v.s.timeFrame === 'past');
   const avg = past.length ? Math.round(past.slice(-6).reduce((a, v) => a + v.done, 0) / Math.min(6, past.length)) : 0;
   const bars = vals.map((v, k) => { const x0 = L + k * bw + bw * .15, w = bw * .7;
-    return `<g class="click" data-i="${v.i}" style="cursor:pointer"><title>${esc(v.s.name)}: ${v.done} of ${v.all} ${usePts ? 'points' : 'items'} done</title>
+    return `<g class="click" data-i="${v.i}" style="cursor:pointer"><title>${esc(v.s.name)}: ${v.done} of ${v.all} ${usePts ? 'points' : 'stories and bugs'} done (what is in the sprint now)</title>
       <rect x="${x0}" y="${y(v.all)}" width="${w}" height="${y(0) - y(v.all)}" fill="${col('--line')}"/>
       <rect x="${x0}" y="${y(v.done)}" width="${w}" height="${y(0) - y(v.done)}" fill="${v.i === curIdx ? col('--active') : col('--done')}"/>
       <text x="${x0 + w / 2}" y="${H - B + 14}" text-anchor="end" transform="rotate(-35 ${x0 + w / 2} ${H - B + 14})">${esc(v.s.name.slice(0, 18))}</text></g>`; }).join('');
   const grid = [0, .5, 1].map(f => { const v = Math.round(max * f); return `<line x1="${L}" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="${col('--line')}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`; }).join('');
   $('#sbody').innerHTML = `<div class="card" id="velo" style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;min-width:${Math.min(W, 900)}px">${grid}${bars}
     ${avg ? `<line x1="${L}" x2="${W - 10}" y1="${y(avg)}" y2="${y(avg)}" stroke="${col('--accent')}" stroke-dasharray="5 4"/><text x="${W - 12}" y="${y(avg) - 4}" text-anchor="end" style="fill:${col('--accent')}">avg of last ${Math.min(6, past.length)}: ${avg}</text>` : ''}</svg>
-    <div class="legend" style="padding:0 6px"><span style="--c:var(--done)">Done</span><span style="--c:var(--line)">Planned</span><span style="--c:var(--active)">Current sprint</span></div></div>
+    <div class="legend" style="padding:0 6px"><span style="--c:var(--done)">Done</span><span style="--c:var(--line)">In the sprint now</span><span style="--c:var(--active)">Current sprint</span></div></div>
     <p class="sub">Click a bar to open that sprint.</p>`;
   $('#velo svg').onclick = e => { const g = e.target.closest('g.click'); if (g) { selSprint = +g.dataset.i; sprintView = 'detail'; renderSprints(); } };
 }
@@ -1894,6 +1988,98 @@ function renderSprintMap() {
   card.onmouseleave = () => { tip.hidden = true; cur = null; };
 }
 
+// ---------- Needs attention ----------
+// Checks over the same data and filters as every other tab. Each finding says why it was flagged, with
+// the evidence and dates; each check says what it can't see. Checks can be turned off (saved in this browser).
+const attnCfg = Object.assign({off: {}, staleDays: 14, estimate: 'auto'}, store.get('attention', {}));
+const isOpen = it => it.bucket === 'new' || it.bucket === 'active';
+const spEnded = i => i >= 0 && (SPR[i].timeFrame === 'past' || (!!SPR[i].finish && Date.parse(SPR[i].finish) + 864e5 < Date.now()));
+const spLabel = i => i < 0 ? 'the backlog (no sprint)' : `${SPR[i].name}${SPR[i].start ? ` (${fmtDate(SPR[i].start)} &ndash; ${fmtDate(SPR[i].finish)})` : ''}`;
+const daysAgo = d => d ? Math.floor((Date.now() - Date.parse(d)) / 864e5) : null;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const isStory = it => it.level === 2 && it.kind !== 'Bug';
+const upcoming = it => curIdx >= 0 ? it.sp >= curIdx : it.sp >= 0 && !spEnded(it.sp);   // current sprint and later
+const preds = new Map();
+(D.graph.edges || []).forEach(e => { if (e.kind !== 'depends') return; const a = +String(e.from).slice(1), b = +String(e.to).slice(1);
+  if (!preds.has(b)) preds.set(b, []); preds.get(b).push(a); });
+const sprintStories = D.items.filter(i => isStory(i) && i.sp >= 0);
+let pointed = sprintStories.filter(i => i.points != null).length;
+const usesPoints = () => pointed > 0 && pointed / sprintStories.length >= .5;   // Auto: at least half the stories in sprints are estimated
+const ATTN = [
+  {id: 'unassigned', name: `Unassigned work in the ${curWord} sprint`,
+    why: `In the ${curWord} sprint, not done, and nobody is assigned.`,
+    skip: () => curIdx < 0 && 'No current or upcoming sprint was found for the team, so this check can\'t run.',
+    test: it => it.sp === curIdx && isOpen(it) && it.level >= 2 && !it.assignee,
+    ev: it => `${spLabel(it.sp)} &middot; ${esc(it.state)} &middot; last changed ${fmtDate(it.changed)}`},
+  {id: 'blocked', name: 'Waiting on unfinished predecessors',
+    why: `Work in the ${curWord} sprint with a predecessor (dependency link) that isn't done.`,
+    limit: 'Only sees predecessor links between items in this report.',
+    skip: () => curIdx < 0 && 'No current or upcoming sprint was found for the team, so this check can\'t run.',
+    test: it => it.sp === curIdx && isOpen(it) && (preds.get(it.id) || []).some(p => byId.has(p) && byId.get(p).bucket !== 'done' && byId.get(p).bucket !== 'removed'),
+    ev: it => 'Waits on ' + (preds.get(it.id) || []).map(p => byId.get(p)).filter(p => p && p.bucket !== 'done' && p.bucket !== 'removed')
+      .map(p => `${link(p)} ${esc(p.state)}${p.sp >= 0 ? ' in ' + esc(SPR[p.sp].name) : ', no sprint'}`).join(', ')},
+  {id: 'past', name: 'Unfinished work in sprints that have ended',
+    why: 'Not done, and still assigned to a sprint whose end date has passed.',
+    limit: 'Shows where items are assigned now. It isn\'t carryover history: revisions aren\'t read, so it can\'t tell when an item was moved.',
+    test: it => spEnded(it.sp) && isOpen(it) && it.level >= 2,
+    ev: it => `Assigned to ${spLabel(it.sp)} &middot; ended ${plural(daysAgo(SPR[it.sp].finish), 'day')} ago &middot; ${esc(it.state)}`},
+  {id: 'stale', name: 'No recent updates', param: 'staleDays',
+    why: () => `In progress, or in the ${curWord} sprint, and not changed in ${attnCfg.staleDays} days.`,
+    limit: '"Changed" counts any edit to the item, including comments.',
+    test: it => isOpen(it) && it.level >= 2 && (it.bucket === 'active' || it.sp === curIdx) && daysAgo(it.changed) >= attnCfg.staleDays,
+    ev: it => `${esc(it.state)} &middot; last changed ${fmtDate(it.changed)} (${plural(daysAgo(it.changed), 'day')} ago) &middot; ${spLabel(it.sp)}`},
+  {id: 'estimate', name: 'Stories without an estimate', mode: true,
+    why: 'In the current or an upcoming sprint with no story points or effort.',
+    skip: () => attnCfg.estimate === 'auto' && !usesPoints() &&
+      `Skipped (Auto): ${pointed} of ${sprintStories.length} stories in sprints have story points or effort. Auto runs this check when at least half do. Set it to Always under Checks to run it anyway.`,
+    test: it => isStory(it) && isOpen(it) && upcoming(it) && it.points == null,
+    ev: it => `${spLabel(it.sp)} &middot; ${esc(it.state)} &middot; no story points or effort`},
+  {id: 'ac', name: 'Stories without acceptance criteria',
+    why: 'In the current or an upcoming sprint with an empty Acceptance Criteria field.',
+    limit: 'Teams that write criteria in the description should turn this check off.',
+    skip: () => !D.acRead && 'This data was saved before acceptance criteria were read. Refresh to include them.',
+    test: it => isStory(it) && isOpen(it) && upcoming(it) && !it.ac,
+    ev: it => `${spLabel(it.sp)} &middot; ${esc(it.state)} &middot; Acceptance Criteria is empty`},
+  {id: 'orphan', name: 'Stories without a parent',
+    why: 'Not done and not under a feature or epic, so it doesn\'t roll up into any progress.',
+    limit: 'Bugs are left out: they often have no parent on purpose.',
+    test: it => isStory(it) && isOpen(it) && it.parent == null,
+    ev: it => `${esc(it.type)} &middot; ${esc(it.state)} &middot; created ${fmtDate(it.created)} &middot; in ${spLabel(it.sp)}`}
+];
+let attnShowAll = new Set();
+function attnFindings() {
+  return ATTN.filter(c => !attnCfg.off[c.id]).map(c => {
+    const skip = c.skip && c.skip();
+    return {c, skip, items: skip ? [] : D.items.filter(it => it.bucket !== 'removed' && pass(it) && c.test(it))};
+  });
+}
+function renderAttention() {
+  const res = attnFindings(), n = new Set(res.flatMap(r => r.items.map(i => i.id))).size;
+  $('#attnN').textContent = n; $('#attnN').hidden = !n;
+  $('#ainfo').innerHTML = `${n ? `<b>${n}</b> item${n === 1 ? '' : 's'} flagged` : 'Nothing flagged'} by ${res.length} of ${ATTN.length} checks &middot; data ${D.demo ? 'from the demo' : 'refreshed ' + esc(fmtWhen(D.runUtc))}` +
+    (filtersOn() ? ' &middot; <b>filters apply</b>' : '') + (D.sprint ? ` &middot; ${curSprintLabel()}` : '');
+  $('#a-menu').innerHTML = ATTN.map(c => `<label><input type="checkbox" data-c="${c.id}"${attnCfg.off[c.id] ? '' : ' checked'}> ${esc(c.name)}</label>` +
+    (c.param ? `<label style="padding-left:26px" class="sub">after <input type="number" min="1" max="365" id="a-stale" value="${attnCfg.staleDays}"> days</label>` : '') +
+    (c.mode ? `<label style="padding-left:26px" class="sub"><select id="a-est"><option value="auto"${attnCfg.estimate === 'auto' ? ' selected' : ''}>Auto</option><option value="always"${attnCfg.estimate === 'always' ? ' selected' : ''}>Always</option></select> Auto: only when at least half the stories in sprints are estimated</label>` : '')).join('') +
+    '<p class="sub def">Saved in this browser only.</p>';
+  $('#abody').innerHTML = res.map(({c, skip, items}) => {
+    const why = typeof c.why === 'function' ? c.why() : c.why, all = attnShowAll.has(c.id), rows = all ? items : items.slice(0, 50);
+    return `<details class="card acheck"${items.length ? ' open' : ''}><summary><h3>${esc(c.name)}</h3><span class="sub">${skip ? 'not run' : items.length + ' item' + (items.length === 1 ? '' : 's')}</span></summary>
+      <div class="sub why">${esc(why)}${c.limit ? ` <span class="lim">${esc(c.limit)}</span>` : ''}</div>` +
+      (skip ? `<p class="sub">${esc(skip)}</p>` : !items.length ? '<p class="sub">Nothing found.</p>' :
+      `<div class="tablewrap"><table><thead><tr><th>Item</th><th>Title</th><th>State</th><th>Assigned</th><th>Why, with evidence</th></tr></thead><tbody>${
+        rows.map(it => `<tr><td style="white-space:nowrap">${badge(it)} ${link(it)}</td><td class="t" style="max-width:340px" title="${esc(it.title)}">${esc(it.title)}</td><td>${pill(it)}</td><td>${it.assignee ? esc(it.assignee) : '<span class="sub">Unassigned</span>'}</td><td class="sub ev">${c.ev(it)}</td></tr>`).join('')
+      }</tbody></table></div>${items.length > rows.length ? `<button class="btn" data-all="${c.id}" style="margin-top:6px">Show all ${items.length}</button>` : ''}`) + '</details>';
+  }).join('') || '<p class="sub">All checks are turned off. Turn some on under Checks.</p>';
+}
+$('#a-menu').addEventListener('change', e => {
+  if (e.target.id === 'a-stale') { const v = Math.max(1, Math.min(365, +e.target.value || 14)); attnCfg.staleDays = v; }
+  else if (e.target.id === 'a-est') attnCfg.estimate = e.target.value === 'always' ? 'always' : 'auto';
+  else if (e.target.dataset.c) { if (e.target.checked) delete attnCfg.off[e.target.dataset.c]; else attnCfg.off[e.target.dataset.c] = true; }
+  store.set('attention', attnCfg); renderAttention(); $('#a-checks').open = true;
+});
+$('#abody').addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (b) { attnShowAll.add(b.dataset.all); renderAttention(); } });
+
 // ---------- Changes ----------
 let cRange = store.get('cRange', 'latest'), cView = 'log', cType = '', cShown = 300;
 const changes = (D.changes || []).map(c => Object.assign({t: Date.parse(c.when)}, c));
@@ -1921,7 +2107,7 @@ function renderChanges() {
   const completed = D.items.filter(i => i.bucket === 'done' && i.closed && inR(i.closed) && pass(i));
   const updated = D.items.filter(i => i.changed && inR(i.changed) && pass(i));
   const cnt = k => log.filter(c => c.change === k).length;
-  $('#cinfo').textContent = `Showing changes ${label}`;
+  $('#cinfo').textContent = `Showing changes ${label}` + (cView === 'log' ? ' · the change log holds what was seen between refreshes, not every edit' : '');
   $('#ckpis').innerHTML = [['Created', created.length], ['Completed', completed.length], ['Updated', updated.length], ['State changes', cnt('State')],
     ['Moved sprint', cnt('Sprint')], ['Reassigned', cnt('Assigned')], ['Added to scope', cnt('Added')], ['Left scope', cnt('Left scope')]]
     .map(([k, v]) => `<div class="kpi"><span class="sub">${k}</span><b>${v.toLocaleString()}</b></div>`).join('');
@@ -2226,7 +2412,7 @@ function renderHeatmap() {
     `<tr${attr ? ` data-who="${esc(k)}"${k === hmAuthor ? ' class="on"' : ''} title="Show only ${esc(k)}"` : ''}><td class="t" style="max-width:240px">${esc(label(k))}</td><td class="n">${v.toLocaleString()}</td><td style="width:40%"><div class="bar"><i class="b-done" style="width:${100 * v / Math.max(...m.values())}%"></i></div></td></tr>`).join('');
   const range = spDays ? `${fmtDate(sp.start)} &ndash; ${fmtDate(sp.finish)}` : 'last 52 weeks';
   const older = spDays && fromK < iso(new Date(today.getTime() - (CM.days || 365) * day));
-  $('#minfo').innerHTML = `Commits per day, ${range}${byPerson ? ', by person' : ''} &middot; counts only (dates and authors), no code` +
+  $('#minfo').innerHTML = `Commits per day, ${range}${byPerson ? ', by person' : ''} &middot; counts only (dates and authors), no code &middot; shows activity, not anyone's productivity` +
     (sp && !spDays ? ` &middot; ${esc(sp.name)} has no dates, so the last 52 weeks are shown` : '') +
     (older ? ` &middot; commit data only goes back ${CM.days || 365} days` : '');
   $('#mbody').innerHTML = `
@@ -2324,7 +2510,7 @@ function renderHeatmap() {
 }
 
 function renderAll() {
-  renderKpis(); renderEpicList(); renderRight(); renderSprints(); renderChanges();
+  renderKpis(); renderEpicList(); renderRight(); renderSprints(); renderChanges(); renderAttention();
   if (activeTab === 'maps') renderMaps();
   if (window.graphApi) graphApi.redraw();
 }
@@ -2838,6 +3024,7 @@ function Start-LaunchPad {
     $job = @{ proc = $null; action = ''; label = ''; started = $null; exit = $null; log = (Join-Path $logDir 'launchpad.log'); err = (Join-Path $logDir 'launchpad.err.log') }
     $actions = [ordered]@{
         setup    = @{ label = 'Set up folders'; args = @('-Setup') }
+        check    = @{ label = 'Check connection'; args = @('-Check') }
         pull     = @{ label = 'Pull changes'; args = @() }
         full     = @{ label = 'Full refresh'; args = @('-Full') }
         offline  = @{ label = 'Rebuild report'; args = @('-Offline') }
@@ -3011,6 +3198,7 @@ pre{background:var(--code);color:var(--codetext);border-radius:8px;padding:10px 
   <section class="card wide">
     <h2>Maintenance</h2>
     <div class="acts">
+      <div class="act"><button class="btn" data-a="check">Check connection</button><span class="sub">Tests the token, project, team, sprints and permissions, and lists your teams if the team name is wrong. Reads only.</span></div>
       <div class="act"><button class="btn primary" data-a="pull">Pull changes</button><span class="sub">Get what changed in Azure DevOps since the last pull and rebuild the report. The everyday button.</span></div>
       <div class="act"><button class="btn" data-a="full">Full refresh</button><span class="sub">Re-read everything from Azure DevOps. Use it if something looks out of date.</span></div>
       <div class="act"><button class="btn" data-a="offline">Rebuild report</button><span class="sub">Rebuild the report from the saved data. No Azure DevOps calls.</span></div>
@@ -3210,13 +3398,14 @@ else {
     $BaseUrl = "$($ServerUrl.TrimEnd('/'))/$([uri]::EscapeDataString($Org))"
     $ProjUrl = "$BaseUrl/$([uri]::EscapeDataString($Project))"
     $script:AuthHeader = Get-AuthHeader
+    if ($Check) { Test-AdoAccess; return }
     [void](New-Item -ItemType Directory -Force -Path $CacheDir)
 
     # Work items: reuse the cache when it was made with the same scope settings
     $signature = "$Org|$Project|$($Types -join ',')|$AreaPath|$($EpicId -join ',')|$([bool]$IncludeRemoved)|$ClosedWithinDays"
     $cache = @{}; $since = $null
     $wc = Read-JsonFile $WiCachePath
-    if ($wc -and $wc.version -eq 2 -and $wc.signature -eq $signature) {
+    if ($wc -and $wc.version -eq 3 -and $wc.signature -eq $signature) {   # v3 added acceptance criteria
         foreach ($ci in $wc.items) { $cache[[int]$ci.id] = $ci }
         $prevRunUtc = [string]$wc.lastRunUtc
         $since = ([datetime]$wc.lastRunUtc).ToUniversalTime().AddMinutes(-10).ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -3228,7 +3417,7 @@ else {
 
     Sync-WorkItems $cache $since $runUtc $changeLog -FetchAll:$Full
     $raw = @($cache.Values)
-    Write-JsonFile $WiCachePath @{ version = 2; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
+    Write-JsonFile $WiCachePath @{ version = 3; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
 
     $typeNames = @($raw | ForEach-Object { $_.fields.'System.WorkItemType' } | Where-Object { $_ } | Sort-Object -Unique)
     Write-Host 'Reading state categories, sprints, repos...'
@@ -3278,6 +3467,8 @@ $model.runUtc = $runUtc
 $model.prevRunUtc = $prevRunUtc
 $model.commits = @{ days = $CommitDays; rows = $commitRows }
 $model.demo = [bool]$Demo
+# Saved data from before acceptance criteria were read can't tell "none" from "not read"
+$model.acRead = [bool]($Demo -or -not $Offline -or ($wc -and [int]$wc.version -ge 3))
 
 $json = ConvertTo-Json -InputObject $model -Depth 12 -Compress
 $utf8 = New-Object Text.UTF8Encoding $false
