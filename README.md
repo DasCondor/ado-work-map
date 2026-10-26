@@ -120,6 +120,10 @@ The connections: work items, their parent/child, related and dependency links, a
 
 <img src="docs/images/spider-web.png" alt="Spider web: a graph of work items, pull requests, branches, commits and repositories" width="900">
 
+### Experimental
+
+Eight new maps to try, each with a short **How to read this map** box: **feature readiness** (is each open feature ready to plan?), **people load** (remaining hours per person per sprint), **dependencies** (are predecessors planned first?), **work aging** (what's been in progress longest), **forecast** (likely finish dates from the team's real pace), **sprint flow** (added, finished, carried over), **PR flow** (time to merge and waiting PRs per repo) and **cross-team** (which area paths wait on which). They may change; if one can't be drawn, the rest of the report still works.
+
 ## Quick start
 
 ### Requirements
@@ -346,7 +350,7 @@ The cache belongs to one scope. When the scope changes, the next run pulls every
 
 ## Latest updates
 
-**1.5.1 (preview)**: the sprint names stay frozen at the top of the sprint map and sprint detail while you scroll, and the Needs attention **Checks** menu fits on screen. It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+**1.5.2 (preview)**: an **Experimental** tab with eight new maps (feature readiness, people load, dependencies, work aging, forecast, sprint flow, PR flow, cross-team), each with a foldable **How to read this map** box; a map that can't be drawn no longer affects the rest of the report. It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
 
 Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 

@@ -19,7 +19,8 @@ const TYPE_COLORS = {
 const CACHE_FIELDS = ['System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
   'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
   'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
-  'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria'];
+  'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria',
+  'Microsoft.VSTS.Common.ActivatedDate'];
 const CACHE_RELS = ['System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink'];
 const MAX_CHANGES = 20000;
 
@@ -530,7 +531,7 @@ function buildModel(raw, cats, sprintInfo, repos, prs) {
       points: points == null ? null : points,
       remaining: f['Microsoft.VSTS.Scheduling.RemainingWork'] == null ? null : f['Microsoft.VSTS.Scheduling.RemainingWork'],
       completed: f['Microsoft.VSTS.Scheduling.CompletedWork'] == null ? null : f['Microsoft.VSTS.Scheduling.CompletedWork'],
-      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''), ac: !!f['Microsoft.VSTS.Common.AcceptanceCriteria'],
+      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''), activated: String(f['Microsoft.VSTS.Common.ActivatedDate'] || ''), ac: !!f['Microsoft.VSTS.Common.AcceptanceCriteria'],
       inSprint: !!(sprintPath && (itPath.toLowerCase() === sprintPath.toLowerCase() || itPath.toLowerCase().startsWith(sprintPath.toLowerCase() + '\\'))),
       url: `${ctx.projUrl}/_workitems/edit/${w.id}`, parent: null, children: []
     });
@@ -637,7 +638,7 @@ function buildModel(raw, cats, sprintInfo, repos, prs) {
           if (d.status) tip.push(`Status: ${d.status}`);
           if (d.source) tip.push(`${d.source} \u2192 ${d.target}`);
           if (d.author) tip.push(`By: ${d.author}`);
-          n.status = d.status; n.source = d.source;
+          n.status = d.status; n.source = d.source; n.created = d.created; n.closed = d.closed;
         }
         tip.push(`Repo: ${repoName}`);
         n.title = tip.join('\n');
@@ -709,7 +710,7 @@ async function pull(full) {
   const cache = new Map();
   let since = null, prevRunUtc = '';
   const wc = saved.wi;
-  if (wc && wc.version === 3 && wc.signature === signature) {   // v3 added acceptance criteria
+  if (wc && wc.version === 4 && wc.signature === signature) {   // v3 added acceptance criteria, v4 the activated date
     for (const ci of wc.items) cache.set(ci.id, ci);
     prevRunUtc = wc.lastRunUtc;
     since = minusMinutes(wc.lastRunUtc, 10);
@@ -719,7 +720,7 @@ async function pull(full) {
 
   await syncWorkItems(cache, since, runUtc, changes, full, S);
   const raw = [...cache.values()];
-  await store.set(key('wi'), {version: 3, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
+  await store.set(key('wi'), {version: 4, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
 
   step('Reading state categories, sprints and repos...');
   const typeNames = [...new Set(raw.map(w => w.fields['System.WorkItemType']).filter(Boolean))].sort();

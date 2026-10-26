@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.2 (preview)
+
+- Experimental tab: eight new maps (feature readiness, people load, dependencies, work aging, forecast, sprint flow, PR flow, cross-team), each with a How to read this map box
+- A map or view that fails to draw no longer stops the rest of the report
+- Reads Activated Date and pull request dates (the first refresh re-reads every work item once)
+
 ## 1.5.1 (preview)
 
 - Sprint map: the sprint-name row stays in view while scrolling; the sprint cards stick flush under the filter bar

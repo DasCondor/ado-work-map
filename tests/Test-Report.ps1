@@ -35,6 +35,19 @@ try {
     ok(attnCfg.estimate === 'auto' && /Skipped \(Auto\): 0 of \d+ stories/.test(est().skip || ''), 'Auto skips the estimate check, saying why');
     attnCfg.estimate = 'always'; ok(!est().skip && est().items.length > 0, 'Always runs it anyway');
     attnCfg.off.ac = true; ok(!attnFindings().some(x => x.c.id === 'ac'), 'a check can be turned off');
+    // Experimental maps: each draws from the demo data, and one failing leaves the rest working
+    const xb = () => document.getElementById('xbody');
+    ok(typeof renderLab === 'function', 'the experimental maps script loads');
+    for (const k of Object.keys(labMaps)) { store.set('labView', k); renderLab();
+      ok(!xb().querySelector('.xfail') && /<(table|svg)/.test(xb().innerHTML), 'experimental map draws from the demo data: ' + k); }
+    const keep = labMaps.deps.draw; labMaps.deps.draw = () => { throw new Error('test failure'); };
+    store.set('labView', 'deps'); renderLab(); ok(/Dependencies couldn't be drawn/.test(xb().textContent), 'a failing map says so in its place');
+    store.set('labView', 'aging'); renderLab(); ok(!xb().querySelector('.xfail'), 'the other maps still draw');
+    labMaps.deps.draw = keep;
+    const keepC = renderChanges; renderChanges = () => { throw new Error('test failure'); };
+    document.getElementById('kpis').innerHTML = ''; renderAll(); renderChanges = keepC;
+    ok(document.getElementById('kpis').innerHTML !== '' && document.getElementById('abody').innerHTML !== '', 'one view failing leaves the others drawn');
+    showTab('lab'); delete window.renderLab; showTab('map'); showTab('lab'); ok(true, 'the report works without the experimental script'); showTab('attention');
     F.person = ['nobody at all']; ok(attnFindings().every(x => !x.items.length), 'filters apply to the checks');
   } catch (e) { r.push('FAIL  ' + e.message); }
   document.getElementById('probe').textContent = r.join('\n');
@@ -49,6 +62,6 @@ try {
     $text = [Net.WebUtility]::HtmlDecode([regex]::Match($dom, '<pre id="probe">([\s\S]*?)</pre>').Groups[1].Value)
     if (-not $text) { $text = 'FAIL  the checks did not run (the report script probably has a syntax error)' }
     Write-Host $text
-    if ($text -match 'FAIL') { exit 1 } else { Write-Host 'All passed' }
+    if ($text -cmatch '(?m)^FAIL') { exit 1 } else { Write-Host 'All passed' }
 }
 finally { Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue }

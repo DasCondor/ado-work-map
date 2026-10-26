@@ -2,6 +2,22 @@
 
 Every release of ADO Work Map (PowerShell script and VS Code extension), newest first. Back to the [README](README.md).
 
+### 1.5.2 &mdash; preview: experimental maps
+
+- **Experimental tab** with eight new maps, each with a short **How to read this map** box you can fold away once you know it:
+  - **Feature readiness:** each open feature checked for estimates, acceptance criteria, an owner, blockers and a sprint.
+  - **People load:** remaining task hours per person per sprint, with an Unassigned row.
+  - **Dependencies:** predecessor links laid over the sprints, with out-of-order plans in red.
+  - **Work aging:** how long each item in progress has been going, against how long finished work took.
+  - **Forecast:** likely finish dates (50% / 85% / 95%) from the team's real weekly pace.
+  - **Sprint flow:** what each sprint started with, what was added, finished, carried over or moved out (from the change log).
+  - **PR flow:** time to merge and waiting pull requests per repo.
+  - **Cross-team:** which area paths wait on which, and how many of those hand-offs are late.
+- **Safer report:** if one map or view can't be drawn, it says so in its place and the rest of the report keeps working. The experimental maps load separately, so a problem in them can't stop the report.
+- **How to read this map** boxes on the treemap, repo matrix, commit heatmap and sprint map too.
+- **Reads two more fields:** each work item's Activated Date and pull request open and close dates. The first refresh after updating re-reads every work item once.
+- **Fixed:** the Changes tab's info line showed a garbled character instead of a dot.
+
 ### 1.5.1 &mdash; preview: frozen sprint headers, Checks menu
 
 - **Sprint map:** the row with the sprint names stays in view while you scroll down through epics and features (the table's own styling was cancelling its frozen header).

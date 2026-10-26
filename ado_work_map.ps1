@@ -491,7 +491,8 @@ function ConvertTo-Hashtable($Dict) {
 $CacheFields = @('System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
     'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
     'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
-    'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria')
+    'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria',
+    'Microsoft.VSTS.Common.ActivatedDate')
 $CacheRels = @('System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink')
 
 function ConvertTo-CacheItem($w) {
@@ -825,6 +826,7 @@ function Build-Model($Raw, $Cats, $SprintInfo, $Repos, $PrDetails) {
             created   = [string]$f.'System.CreatedDate'
             changed   = [string]$f.'System.ChangedDate'
             closed    = [string]$f.'Microsoft.VSTS.Common.ClosedDate'
+            activated = [string]$f.'Microsoft.VSTS.Common.ActivatedDate'
             ac        = [bool]$f.'Microsoft.VSTS.Common.AcceptanceCriteria'
             inSprint  = [bool]($sprintPath -and ($itPath -eq $sprintPath -or $itPath.StartsWith("$sprintPath\", [StringComparison]::OrdinalIgnoreCase)))
             url       = "$ProjUrl/_workitems/edit/$id"
@@ -950,7 +952,7 @@ function Build-Model($Raw, $Cats, $SprintInfo, $Repos, $PrDetails) {
                         if ($d.status) { $tip += "Status: $($d.status)" }
                         if ($d.source) { $tip += "$($d.source) $arrow $($d.target)" }
                         if ($d.author) { $tip += "By: $($d.author)" }
-                        $n.status = $d.status; $n.source = $d.source
+                        $n.status = $d.status; $n.source = $d.source; $n.created = $d.created; $n.closed = $d.closed
                     }
                     $tip += "Repo: $repoName"
                     $n.title = $tip -join "`n"
@@ -1056,6 +1058,7 @@ function Update-History($Model, [string]$Path, [switch]$SeedDemo, [switch]$NoWri
 # --------------------------------------------------------------------------- #
 function New-DemoData {
     $rnd = New-Object System.Random 14
+    $rnd2 = New-Object System.Random 7   # for the experimental maps' data, so the older demo data stays the same
     function Pick($a) { $a[$rnd.Next($a.Count)] }
     $projId = '11111111-0000-0000-0000-000000000000'
     $repos = @()
@@ -1107,6 +1110,12 @@ function New-DemoData {
             $fields['System.ChangedDate'] = Iso $closed
         }
         else { $fields['System.ChangedDate'] = Iso ((Get-Date).AddHours(-$rnd.Next(1, 24 * 20))) }
+        if ($state -ne 'New') {
+            $act = $created.AddDays($rnd2.Next(0, 8)).AddHours($rnd2.Next(0, 8))
+            if ($state -eq 'Closed' -and $act -gt $closed) { $act = $closed.AddDays(-1) }
+            if ($act -gt (Get-Date)) { $act = (Get-Date).AddDays(-$rnd2.Next(1, 4)) }
+            $fields['Microsoft.VSTS.Common.ActivatedDate'] = Iso $act
+        }
         $rels = New-Object 'Collections.Generic.List[object]'
         if ($parent) {
             $rels.Add(@{ rel = 'System.LinkTypes.Hierarchy-Reverse'; url = (WiUrl $parent.id) })
@@ -1157,6 +1166,11 @@ function New-DemoData {
                     Add-Art $story 'PullRequestId' $repo $prId
                     $prDetails[$prId] = @{ title = $story.fields.'System.Title'; status = $(if ($state -eq 'Closed') { 'completed' } else { 'active' })
                         source = $branch; target = 'main'; author = $story.fields.'System.AssignedTo'.displayName }
+                    if ($state -eq 'Closed') {
+                        $prClosed = [datetime]::Parse($story.fields.'Microsoft.VSTS.Common.ClosedDate', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+                        $prDetails[$prId].closed = Iso $prClosed; $prDetails[$prId].created = Iso $prClosed.AddHours(-$rnd2.Next(3, 24 * 6))
+                    }
+                    else { $prDetails[$prId].created = Iso ((Get-Date).AddHours(-$rnd2.Next(5, 24 * 16))) }
                 }
                 $taskCount = $rnd.Next(2, 6)
                 for ($k = 0; $k -lt $taskCount; $k++) {
@@ -1180,6 +1194,11 @@ function New-DemoData {
     }
     for ($x = 0; $x -lt 4; $x++) {
         $a = Pick $stories; $b = Pick $stories
+        if ($a.id -ne $b.id) { $a.relations.Add(@{ rel = 'System.LinkTypes.Dependency-Forward'; url = (WiUrl $b.id) }) }
+    }
+    # More dependencies, across areas, for the experimental dependency maps
+    for ($x = 0; $x -lt 8; $x++) {
+        $a = $stories[$rnd2.Next($stories.Count)]; $b = $stories[$rnd2.Next($stories.Count)]
         if ($a.id -ne $b.id) { $a.relations.Add(@{ rel = 'System.LinkTypes.Dependency-Forward'; url = (WiUrl $b.id) }) }
     }
     # Something for each Needs attention check to find, in the running sprint and the next one (current between sprints)
@@ -1379,6 +1398,20 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 .smap tr.ep-row td:first-child{font-weight:600;cursor:pointer}
 .smap tr.ft-row td:first-child{padding-left:24px}
 #trend svg,#velo svg{width:100%;height:auto;display:block}
+/* "How to read this" boxes: Got it folds them to one line */
+.explain{margin:0 0 10px;font-size:13px;max-width:980px}
+.explain>summary{cursor:pointer;color:var(--accent);font-size:12.5px}
+.explain:not([open]){border:0;background:none;padding:0}
+.explain dl{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;margin:8px 0}
+.explain dt{color:var(--muted);font-size:12px} .explain dd{margin:0}
+.xfail{border-color:#cc293d;margin:8px 0}
+.xnote{font-size:12px;color:var(--muted);margin:0 0 8px;padding:6px 10px;border-left:4px solid #d97706;background:color-mix(in srgb,#d97706 10%,var(--panel));border-radius:4px}
+#lab svg{width:100%;height:auto;display:block}
+#lab svg text{fill:var(--muted);font-size:11px}
+#lab td.rc{white-space:nowrap} #lab td.rc i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px}
+#lab .dep td{padding:3px 4px;min-width:70px} #lab .dep td.ln{background:linear-gradient(var(--c),var(--c)) center/100% 3px no-repeat}
+#lab .chip{display:inline-block;border:2px solid var(--c);border-radius:12px;padding:0 6px;font-size:11.5px;white-space:nowrap;background:var(--panel)}
+#lab .hc{text-align:right;font-variant-numeric:tabular-nums}
 #trend text,#velo text,#hm text{fill:var(--muted);font-size:11px}
 /* maps narrowed to one sprint */
 .scopebar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px solid var(--accent);border-left-width:5px;border-radius:8px;background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
@@ -1437,6 +1470,7 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
   <button data-tab="changes">Changes</button>
   <button data-tab="maps">Maps</button>
   <button data-tab="web">Spider web</button>
+  <button data-tab="lab">Experimental</button>
 </nav>
 <div class="fbar">
   <input type="search" id="f-q" placeholder="Search title, #id, person, tag">
@@ -1515,6 +1549,7 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
     <button class="btn" id="mcur" hidden>Current sprint</button>
     <span class="sub" id="minfo"></span>
   </div>
+  <div id="mhelp"></div>
   <div id="mscope"></div>
   <div id="mbody"></div>
 </section>
@@ -1546,6 +1581,16 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
     </div>
   </div>
 </section>
+
+<section id="lab">
+  <div class="toolbar">
+    <div class="seg" id="xview"></div>
+    <span class="sub" id="xinfo"></span>
+  </div>
+  <p class="xnote">Experimental maps: new, and they may change or go away. Each one is drawn on its own, so if one can't be drawn it says so here and the rest of the report keeps working.</p>
+  <div id="xhelp"></div>
+  <div id="xbody"><div class="card xfail"><b>The experimental maps didn't load.</b> <span class="sub">The rest of the report works as usual.</span></div></div>
+</section>
 </main>
 <script>
 const D = __DATA__;
@@ -1556,6 +1601,34 @@ const store = {
   set(k, v) { try { localStorage.setItem('adomap.' + D.project + '.' + k, JSON.stringify(v)); } catch (e) {} }
 };
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+// One view failing to draw must not take the rest of the report with it
+const failBox = (name, e) => `<div class="card xfail"><b>${esc(name)} couldn't be drawn.</b> <span class="sub">The rest of the report still works. Details: ${esc(e && e.message || e)}</span></div>`;
+function safe(fn, el, name) { try { fn(); } catch (e) { console.error(e); if (el) el.innerHTML = failBox(name || 'This view', e); } }
+// A short "How to read this" box per map; Got it folds it to one line, remembered in this browser
+const helpShut = store.get('helpShut', {});
+const explainer = (key, h) => `<details class="card explain" data-help="${key}"${helpShut[key] ? '' : ' open'}><summary>How to read this map</summary>
+  <dl><dt>What it answers</dt><dd>${h.q}</dd><dt>How to read it</dt><dd>${h.read}</dd>${h.click ? `<dt>Click</dt><dd>${h.click}</dd>` : ''}${h.limits ? `<dt>Limits</dt><dd>${h.limits}</dd>` : ''}</dl>
+  <button class="btn" data-got>Got it</button></details>`;
+document.addEventListener('toggle', e => { const d = e.target; if (!d.dataset || !d.dataset.help) return; helpShut[d.dataset.help] = !d.open; store.set('helpShut', helpShut); }, true);
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-got]'); if (b) b.closest('details').open = false; });
+const MHELP = {
+  treemap: {q: 'Where is the work, and how far along is each part?',
+    read: 'Each tile is an epic (or a feature inside it). Size = how many work items are under it. Colour = share done, from grey (none) to green (all).',
+    click: 'Click a tile to zoom in; double-click to open it in Azure DevOps. The breadcrumb above goes back up.',
+    limits: 'Counts items, not effort: a tile of ten small stories looks bigger than one of three large ones.'},
+  matrix: {q: 'Which epics touch which repos?',
+    read: 'Rows are epics (or features, once you pick an epic). Columns are repos. A number is how many work items under that row are linked to the repo by a PR, commit or branch; darker = more.',
+    click: 'Click a number to open that epic in the spider web.',
+    limits: 'Only sees code that is linked to work items. With one repo it has little to say.'},
+  heatmap: {q: 'When, where and by whom is code being committed?',
+    read: 'One square per day; darker = more commits. The top repos and people are listed beside it.',
+    click: 'Click a day to see its commits by repo and person. Pick a repo or person to narrow it.',
+    limits: 'Shows activity, not productivity: commit habits differ a lot between people.'},
+  smap: {q: 'Which epics and features are planned into which sprints, and how far along is each?',
+    read: 'Rows are epics (click one for its features). Columns are sprints, with Backlog last. Each cell is stories and bugs done / total, with a bar.',
+    click: 'Hover a cell for its stories, with links. Click a sprint heading to open that sprint.',
+    limits: 'Shows where items are planned now, not where they were planned before.'}
+};
 // The filter bar's real height, for everything that sticks below it (it wraps to two rows on narrow screens)
 { const fb = document.querySelector('.fbar'), set = () => document.documentElement.style.setProperty('--fbh', fb.offsetHeight + 'px');
   set(); if (window.ResizeObserver) new ResizeObserver(set).observe(fb); }
@@ -1586,6 +1659,8 @@ const leafMemo = new Map();
 const leaves = id => { let r = leafMemo.get(id); if (r) return r; const it = byId.get(id);
   r = it.children.length ? it.children.flatMap(leaves) : [id]; leafMemo.set(id, r); return r; };
 const sprintName = it => it.sp >= 0 ? SPR[it.sp].name : '';
+const spOfPath = path => { let p = String(path || '').toLowerCase();   // sprint index of an iteration path, or -1
+  while (p) { if (sprintIndex.has(p)) return sprintIndex.get(p); const k = p.lastIndexOf('\\'); if (k < 0) break; p = p.slice(0, k); } return -1; };
 
 // ---------- global filters ----------
 // People, tags and excluded tags are lists. The area path can have a saved default; excluded tags survive Clear filters.
@@ -1743,7 +1818,8 @@ function showTab(t) {
   $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
   $$('main>section').forEach(s => s.classList.toggle('on', s.id === t));
   if (t === 'web') initGraph();
-  if (t === 'maps') renderMaps();
+  if (t === 'maps') safe(renderMaps, $('#mbody'), 'This map');
+  if (t === 'lab' && window.renderLab) safe(window.renderLab, $('#xbody'), 'The experimental maps');
   if (t === 'sprints' && !renderSprints.scrolled) renderSprints();
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -1966,7 +2042,7 @@ function renderSprintMap() {
     if (!open) return head;
     return head + [...feats.get(ek)].filter(fk => inWin(fa.get(fk))).sort().map(fk => { const f = byId.get(fk);
       return `<tr class="ft-row"><td title="${esc(f ? f.title : '')}">${f ? `${link(f)} ${esc(f.title)}` : '<span class="sub">No feature</span>'}</td>${cell(fa.get(fk), 'f' + fk)}</tr>`; }).join(''); }).join('');
-  $('#sbody').innerHTML = `<div class="card smap"><table><thead><tr><th>Epic / feature</th>${cols.map(i => i < 0 ? '<th>Backlog</th>' :
+  $('#sbody').innerHTML = explainer('smap', MHELP.smap) + `<div class="card smap"><table><thead><tr><th>Epic / feature</th>${cols.map(i => i < 0 ? '<th>Backlog</th>' :
     `<th data-i="${i}" class="${i === curIdx ? 'cur' : ''}" title="${esc(SPR[i].path)}">${esc(SPR[i].name)}<div class="sub">${fmtDate(SPR[i].start)}</div></th>`).join('')}</tr></thead>
     <tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="sub">Nothing in these sprints matches the filters.</td></tr>`}</tbody></table><div class="gtip" id="smtip" hidden></div></div>
     <p class="sub">Click an epic to open its features; click a sprint heading to open that sprint. Hover a cell to see its stories.</p>`;
@@ -2117,7 +2193,7 @@ function renderChanges() {
   const completed = D.items.filter(i => i.bucket === 'done' && i.closed && inR(i.closed) && pass(i));
   const updated = D.items.filter(i => i.changed && inR(i.changed) && pass(i));
   const cnt = k => log.filter(c => c.change === k).length;
-  $('#cinfo').textContent = `Showing changes ${label}` + (cView === 'log' ? ' · the change log holds what was seen between refreshes, not every edit' : '');
+  $('#cinfo').textContent = `Showing changes ${label}` + (cView === 'log' ? ' \u00b7 the change log holds what was seen between refreshes, not every edit' : '');
   $('#ckpis').innerHTML = [['Created', created.length], ['Completed', completed.length], ['Updated', updated.length], ['State changes', cnt('State')],
     ['Moved sprint', cnt('Sprint')], ['Reassigned', cnt('Assigned')], ['Added to scope', cnt('Added')], ['Left scope', cnt('Left scope')]]
     .map(([k, v]) => `<div class="kpi"><span class="sub">${k}</span><b>${v.toLocaleString()}</b></div>`).join('');
@@ -2214,6 +2290,7 @@ function renderMaps() {
   segSet('#mview', 'v', mapsView);
   mrollMemo = new Map();
   renderMapScope();
+  $('#mhelp').innerHTML = explainer('m-' + mapsView, MHELP[mapsView] || MHELP.treemap);
   if (mapsView === 'matrix') renderRepoMatrix(); else if (mapsView === 'heatmap') renderHeatmap(); else renderTreemap();
 }
 $$('#mview button').forEach(b => b.onclick = () => { mapsView = b.dataset.v; store.set('mapsView', mapsView); renderMaps(); });
@@ -2520,9 +2597,10 @@ function renderHeatmap() {
 }
 
 function renderAll() {
-  renderKpis(); renderEpicList(); renderRight(); renderSprints(); renderChanges(); renderAttention();
-  if (activeTab === 'maps') renderMaps();
-  if (window.graphApi) graphApi.redraw();
+  [renderKpis, renderEpicList, renderRight, renderSprints, renderChanges, renderAttention].forEach(f => safe(f));
+  if (activeTab === 'maps') safe(renderMaps, $('#mbody'), 'This map');
+  if (activeTab === 'lab' && window.renderLab) safe(window.renderLab, $('#xbody'), 'The experimental maps');
+  if (window.graphApi) safe(window.graphApi.redraw);
 }
 // The maps lay themselves out for the page width: redraw them when it changes
 let lastWidth = innerWidth;
@@ -2981,7 +3059,296 @@ function initGraph() {
   draw();
 }
 
+// What the experimental maps (their own script, below) may use
+window.reportApi = {D, byId, SPR, curIdx, esc, link, badge, pill, pass, fmtDate, daysAgo, plural, num, isOpen, preds, store,
+  spEnded, spOfPath, filtersOn, explainer, failBox, activeTab: () => activeTab};
 buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
+</script>
+<script id="lab">
+// ---------- Experimental maps ----------
+// Kept in their own script, so a mistake here can't stop the rest of the report, and each map is drawn
+// on its own, so one that fails says so and the others still work. Uses only window.reportApi.
+(function () {
+  let R;
+  const $ = s => document.querySelector(s);
+  const OK = 'var(--done)', WARN = '#d97706', BAD = '#cc293d', DAY = 864e5;
+  const work = () => R.D.items.filter(it => it.level === 2 && it.bucket !== 'removed' && R.pass(it));
+  const pct = (a, p) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  const short = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '\u2026' : s;
+  const days = ms => Math.round(ms / DAY * 10) / 10;
+  const fmtDays = d => d == null ? '' : d < 1 ? Math.round(d * 24) + 'h' : (Math.round(d * 10) / 10) + 'd';
+  const dateIn = w => R.fmtDate(new Date(Date.now() + w * 7 * DAY).toISOString());
+  const item = it => `${R.badge(it)} ${R.link(it)} <span title="${R.esc(it.title)}">${R.esc(short(it.title, 60))}</span>`;
+  const table = (head, rows) => `<div class="tablewrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  const empty = msg => `<p class="sub">${msg}</p>`;
+
+  // Dependency pairs (predecessor -> the item waiting on it) that are still open, with a verdict on the plan
+  function depPairs() {
+    const out = [];
+    R.preds.forEach((ps, b) => ps.forEach(a => {
+      const A = R.byId.get(a), B = R.byId.get(b);
+      if (!A || !B || A.bucket === 'removed' || B.bucket === 'removed' || B.bucket === 'done' || !(R.pass(A) || R.pass(B))) return;
+      let st, why;
+      if (A.bucket === 'done') { st = 'done'; why = 'The predecessor is done.'; }
+      else if (B.sp < 0 && A.sp < 0) { st = 'none'; why = 'Neither is in a sprint yet.'; }
+      else if (B.sp < 0) { st = 'ok'; why = 'The waiting item isn\'t in a sprint yet.'; }
+      else if (A.sp < 0) { st = 'bad'; why = 'The predecessor isn\'t in any sprint, but the item waiting on it is.'; }
+      else if (A.sp > B.sp) { st = 'bad'; why = `The predecessor is planned ${R.plural(A.sp - B.sp, 'sprint')} after the item waiting on it.`; }
+      else if (A.sp === B.sp) { st = 'warn'; why = 'Both are in the same sprint, so the predecessor has to finish first.'; }
+      else { st = 'ok'; why = 'The predecessor is planned first.'; }
+      out.push({A, B, st, why});
+    }));
+    return out;
+  }
+  const ST = {bad: [BAD, 'Out of order'], warn: [WARN, 'Same sprint'], ok: [OK, 'In order'], none: ['var(--new)', 'Not planned'], done: [OK, 'Predecessor done']};
+  const RANK = {bad: 0, warn: 1, ok: 2, none: 3, done: 4};
+
+  const MAPS = {
+    ready: {name: 'Feature readiness',
+      help: {q: 'Which open features are ready to plan into a sprint, and what is each one missing?',
+        read: 'One row per open feature, least ready first. Each column is one test of its open stories: green = all pass, amber = at least half, red = fewer than half (or no stories at all).',
+        click: 'Click an id to open it in Azure DevOps.',
+        limits: '"Not blocked" only sees dependency links between items in this report. "Has AC" needs the Acceptance Criteria field.'},
+      draw() {
+        const feats = R.D.items.filter(f => f.level === 1 && R.isOpen(f)).map(f => {
+          const kids = f.children.map(id => R.byId.get(id)).filter(k => k && k.level === 2 && k.bucket !== 'removed' && R.pass(k));
+          return {f, kids, open: kids.filter(R.isOpen)};
+        }).filter(x => x.kids.length || R.pass(x.f));
+        if (!feats.length) return empty('No open features match the filters.');
+        const frac = (n, d, what) => !d ? [BAD, 'none', 'No open stories'] : [n === d ? OK : n * 2 >= d ? WARN : BAD, `${n}/${d}`, `${n} of ${d} open stories ${what}`];
+        const blocked = k => (R.preds.get(k.id) || []).some(p => R.byId.has(p) && R.isOpen(R.byId.get(p)));
+        const rows = feats.map(({f, kids, open}) => {
+          const d = open.length, assigned = open.filter(k => k.assignee).length;
+          const tests = [
+            frac(open.filter(k => k.points != null).length, d, 'have story points or effort'),
+            R.D.acRead === false ? ['var(--new)', 'n/a', 'Acceptance criteria weren\'t read'] : frac(open.filter(k => k.ac).length, d, 'have acceptance criteria'),
+            f.assignee ? [OK, R.esc(short(f.assignee, 18)), 'The feature has an owner'] : d && assigned === d ? [WARN, 'stories only', 'The feature has no owner, but every open story does'] : [BAD, 'none', 'Nobody owns the feature' + (d ? `, and ${d - assigned} open stories are unassigned` : '')],
+            frac(open.filter(k => !blocked(k)).length, d, 'aren\'t waiting on an unfinished predecessor'),
+            frac(open.filter(k => k.sp >= 0 && !R.spEnded(k.sp)).length, d, 'are in a sprint that hasn\'t ended')];
+          return {f, d, kids, tests, score: !d && kids.length ? 6 : tests.filter(t => t[0] === OK).length};
+        }).sort((a, b) => a.score - b.score || a.f.id - b.f.id);
+        const cell = t => `<td class="rc" style="--c:${t[0]}" title="${R.esc(t[2])}"><i></i>${t[1]}</td>`;
+        return table(['Feature', 'Open stories', 'Estimated', 'Has AC', 'Owner', 'Not blocked', 'Scheduled', 'Ready'],
+          rows.slice(0, 300).map(r => `<tr><td>${item(r.f)}</td><td class="hc">${r.d} <span class="sub">of ${r.kids.length}</span></td>${r.score === 6
+            ? `<td colspan="6" class="sub">Every story is done, but the feature is still open: close it?</td>` : r.tests.map(cell).join('') + `<td class="hc"><b>${r.score}</b>/5</td>`}</tr>`)) +
+          (rows.length > 300 ? empty(`Least ready 300 of ${rows.length} features shown.`) : '');
+      }},
+
+    load: {name: 'People load',
+      help: {q: 'Who has too much (or too little) left to do in each sprint, and how much work has nobody on it?',
+        read: 'Rows are people, columns are sprints around now. Each cell is the remaining hours on their open tasks in that sprint; darker = more. Unassigned is the last row.',
+        click: 'Hover a cell to see its tasks.',
+        limits: 'Uses Remaining Work on tasks, so teams that don\'t fill it in see zeros. Capacity isn\'t read here: compare with your team\'s capacity in Azure DevOps.'},
+      draw() {
+        if (!R.SPR.length) return empty('No sprints were found for the team.');
+        const base = R.curIdx >= 0 ? R.curIdx : Math.max(0, R.SPR.findIndex((s, i) => !R.spEnded(i)));
+        const lo = Math.max(0, base - 1), hi = Math.min(R.SPR.length - 1, base + 4), cols = [];
+        for (let i = lo; i <= hi; i++) cols.push(i);
+        const m = new Map(), tot = new Map();
+        R.D.items.forEach(it => { if (it.level < 3 || !R.isOpen(it) || !cols.includes(it.sp) || !R.pass(it)) return;
+          const who = it.assignee || '', h = R.num(it.remaining);
+          let r = m.get(who); if (!r) m.set(who, r = new Map());
+          let c = r.get(it.sp); if (!c) r.set(it.sp, c = {h: 0, items: []});
+          c.h += h; c.items.push(it); tot.set(who, (tot.get(who) || 0) + h); });
+        if (!m.size) return empty('No open tasks in the sprints around now match the filters.');
+        const max = Math.max(1, ...[...m.values()].flatMap(r => [...r.values()].map(c => c.h)));
+        const people = [...m.keys()].sort((a, b) => (a === '') - (b === '') || tot.get(b) - tot.get(a) || a.localeCompare(b));
+        const colTot = i => people.reduce((s, p) => s + ((m.get(p).get(i) || {}).h || 0), 0);
+        return table(['Person', ...cols.map(i => `${R.esc(R.SPR[i].name)}${i === R.curIdx ? ' <span class="sub">(now)</span>' : ''}`), 'Total'],
+          people.map(p => `<tr><td>${p ? R.esc(p) : '<b>Unassigned</b>'}</td>${cols.map(i => { const c = m.get(p).get(i); if (!c) return '<td></td>';
+            const tip = c.items.slice(0, 12).map(t => `#${t.id} ${t.title} (${R.num(t.remaining)}h)`).join('\n') + (c.items.length > 12 ? `\n+${c.items.length - 12} more` : '');
+            return `<td class="hc" title="${R.esc(tip)}" style="background:color-mix(in srgb, ${p ? 'var(--accent)' : BAD} ${Math.round(8 + 62 * c.h / max)}%, transparent)">${c.h}h <span class="sub">(${c.items.length})</span></td>`; }).join('')}<td class="hc"><b>${tot.get(p)}h</b></td></tr>`)
+            .concat(`<tr><td class="sub">All</td>${cols.map(i => `<td class="hc sub">${colTot(i)}h</td>`).join('')}<td></td></tr>`)) +
+          '<p class="sub">Hours = Remaining Work on open tasks. The number in brackets is how many tasks.</p>';
+      }},
+
+    deps: {name: 'Dependencies',
+      help: {q: 'Is work planned in the right order: does each predecessor land before the item waiting on it?',
+        read: 'One row per dependency, worst first. The columns are sprints; the line runs from the predecessor ("first") to the item waiting on it ("waits"). Red = the predecessor is planned later than the item waiting on it, or not planned at all. Amber = both in the same sprint.',
+        click: 'Click an id to open it in Azure DevOps.',
+        limits: 'Only sees predecessor/successor links between items in this report. Pairs whose predecessor is done are counted, not drawn.'},
+      draw() {
+        const all = depPairs(), pairs = all.filter(p => p.st !== 'done').sort((a, b) => RANK[a.st] - RANK[b.st] || a.B.sp - b.B.sp);
+        const done = all.length - pairs.length;
+        if (!pairs.length) return empty(all.length ? `All ${R.plural(done, 'dependency')} in view have a finished predecessor.` : 'No dependency (predecessor / successor) links between items in view.');
+        const used = pairs.flatMap(p => [p.A.sp, p.B.sp]).filter(i => i >= 0);
+        const cols = []; if (used.length) for (let i = Math.min(...used); i <= Math.max(...used); i++) cols.push(i);
+        if (pairs.some(p => p.A.sp < 0 || p.B.sp < 0)) cols.push(-1);
+        const chip = (it, word, c) => `<span class="chip" style="--c:${c}" title="${R.esc(it.title)}">${R.link(it)} ${word}</span>`;
+        const rows = pairs.slice(0, 200).map(p => {
+          const c = ST[p.st][0], a = cols.indexOf(p.A.sp < 0 ? -1 : p.A.sp), b = cols.indexOf(p.B.sp < 0 ? -1 : p.B.sp);
+          return `<tr><td class="rc" style="--c:${c}" title="${R.esc(p.why)}"><i></i>${ST[p.st][1]}<div class="sub">${R.esc(short(p.A.title, 26))} &rarr; ${R.esc(short(p.B.title, 26))}</div></td>${cols.map((_, k) => {
+            if (k === a && k === b) return `<td>${chip(p.A, 'first', c)} ${chip(p.B, 'waits', c)}</td>`;
+            if (k === a) return `<td>${chip(p.A, 'first', c)}</td>`;
+            if (k === b) return `<td>${chip(p.B, 'waits', c)}</td>`;
+            return k > Math.min(a, b) && k < Math.max(a, b) ? `<td class="ln" style="--c:${c}"></td>` : '<td></td>'; }).join('')}</tr>`; });
+        const n = s => pairs.filter(p => p.st === s).length;
+        return `<p class="sub"><b style="color:${BAD}">${n('bad')}</b> out of order &middot; <b style="color:${WARN}">${n('warn')}</b> in the same sprint &middot; ${n('ok')} in order &middot; ${n('none')} not planned yet &middot; ${done} with the predecessor done</p>` +
+          `<div class="tablewrap dep">${table(['Dependency', ...cols.map(i => i < 0 ? 'No sprint' : `${R.esc(R.SPR[i].name)}${i === R.curIdx ? ' <span class="sub">(now)</span>' : ''}`)], rows)}</div>` +
+          (pairs.length > 200 ? empty(`Worst 200 of ${pairs.length} shown.`) : '');
+      }},
+
+    aging: {name: 'Work aging',
+      help: {q: 'Which items in progress have been going for longer than usual, and might be stuck?',
+        read: 'One dot per story, technical story or bug in progress, in a column for its state. Higher = more days since it was started (Activated Date). The lines show how long finished work took: half of it was done within the 50% line, most of it within the 85% line. Dots above the 85% line are red.',
+        click: 'Hover a dot to see the item; click it to open it in Azure DevOps.',
+        limits: 'Needs the Activated Date field. Work finished in the last 120 days sets the lines.'},
+      draw() {
+        const items = work(), now = Date.now();
+        const active = items.filter(it => it.bucket === 'active'), dated = active.filter(it => it.activated);
+        const cycle = items.filter(it => it.bucket === 'done' && it.activated && it.closed && now - Date.parse(it.closed) < 120 * DAY)
+          .map(it => (Date.parse(it.closed) - Date.parse(it.activated)) / DAY).filter(d => d >= 0);
+        if (!dated.length) return empty(active.length ? `${R.plural(active.length, 'item')} in progress, but none has an Activated Date. Refresh to read it (data saved before this version doesn't have it).` : 'Nothing in progress matches the filters.');
+        const p50 = pct(cycle, .5), p85 = pct(cycle, .85);
+        const pts = dated.map(it => ({it, age: (now - Date.parse(it.activated)) / DAY}));
+        const states = [...new Set(pts.map(p => p.it.state))];
+        const W = 900, H = 340, L = 44, B = 26, top = 10, cw = (W - L - 10) / states.length;
+        const ymax = Math.max(5, ...pts.map(p => p.age), p85 || 0) * 1.08, y = d => top + (H - top - B) * (1 - d / ymax);
+        const col = a => p85 == null ? 'var(--accent)' : a > p85 ? BAD : p50 != null && a > p50 ? WARN : OK;
+        const jit = id => ((id * 2654435761) % 1000) / 1000 - .5;
+        const ticks = []; const step = Math.max(1, Math.ceil(ymax / 6 / 5) * 5); for (let d = 0; d < ymax; d += step) ticks.push(d);
+        const line = (d, label) => d == null ? '' : `<line x1="${L}" x2="${W - 10}" y1="${y(d)}" y2="${y(d)}" stroke="var(--muted)" stroke-dasharray="4 4"/><text x="${W - 12}" y="${y(d) - 4}" text-anchor="end">${label} (${fmtDays(d)})</text>`;
+        const svg = `<svg viewBox="0 0 ${W} ${H}">${ticks.map(d => `<line x1="${L}" x2="${W - 10}" y1="${y(d)}" y2="${y(d)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(d) + 4}" text-anchor="end">${d}d</text>`).join('')}
+          ${states.map((s, k) => `<text x="${L + cw * (k + .5)}" y="${H - 8}" text-anchor="middle">${R.esc(short(s, 22))} (${pts.filter(p => p.it.state === s).length})</text>`).join('')}
+          ${line(p50, '50% of finished work took less')}${line(p85, '85% took less')}
+          ${pts.map(p => `<a href="${R.esc(p.it.url)}" target="_blank" rel="noopener"><circle cx="${L + cw * (states.indexOf(p.it.state) + .5 + jit(p.it.id) * .6)}" cy="${y(p.age)}" r="5.5" fill="${col(p.age)}" fill-opacity=".85" stroke="var(--panel)"><title>#${p.it.id} ${R.esc(p.it.title)}\n${R.esc(p.it.state)}, started ${Math.floor(p.age)} days ago${p.it.assignee ? '\n' + R.esc(p.it.assignee) : ''}</title></circle></a>`).join('')}</svg>`;
+        const oldest = pts.sort((a, b) => b.age - a.age).slice(0, 12);
+        return `<div class="card">${svg}</div>` + (cycle.length ? '' : empty('No work with an Activated Date was finished in the last 120 days, so there are no lines to compare with.')) +
+          (active.length > dated.length ? empty(`${active.length - dated.length} in-progress items have no Activated Date and aren't drawn.`) : '') +
+          '<h3 style="margin-top:12px">Longest in progress</h3>' + table(['Item', 'State', 'Assigned', 'Days in progress'],
+            oldest.map(p => `<tr><td>${item(p.it)}</td><td>${R.pill(p.it)}</td><td>${p.it.assignee ? R.esc(p.it.assignee) : '<span class="sub">Unassigned</span>'}</td><td class="hc rc" style="--c:${col(p.age)}"><i></i>${Math.floor(p.age)}</td></tr>`));
+      }},
+
+    forecast: {name: 'Forecast',
+      help: {q: 'When will the work that\'s left be done, and how sure can we be?',
+        read: 'Thousands of possible futures are played out using how many items the team actually finished each week over the last 12 weeks. The bars show how often each finish week came up. 50% / 85% / 95% are the dates by which that share of the futures had finished.',
+        click: 'Pick an epic (or other filters) in the filter bar to forecast just that work.',
+        limits: 'Counts items, not size. Assumes no new work is added and the pace stays like the last 12 weeks.'},
+      draw() {
+        const items = work(), now = Date.now();
+        const weeks = Array(12).fill(0);
+        items.forEach(it => { if (it.bucket !== 'done' || !it.closed) return; const k = Math.floor((now - Date.parse(it.closed)) / (7 * DAY)); if (k >= 0 && k < 12) weeks[k]++; });
+        const left = items.filter(R.isOpen).length, done12 = weeks.reduce((a, b) => a + b, 0);
+        if (!left) return empty('Nothing left to do in view.');
+        if (!done12) return empty(`${R.plural(left, 'item')} left, but nothing in view was finished in the last 12 weeks, so there's no pace to forecast from.`);
+        let seed = left * 7919 + done12;   // a fixed seed, so the same data always gives the same forecast
+        const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const runs = [], CAP = 260;
+        for (let r = 0; r < 5000; r++) { let l = left, w = 0; while (l > 0 && w < CAP) { l -= weeks[Math.floor(rnd() * 12)]; w++; } runs.push(w); }
+        const p = q => pct(runs, q), w50 = p(.5), w85 = p(.85), w95 = p(.95);
+        const hist = new Map(); runs.forEach(w => hist.set(w, (hist.get(w) || 0) + 1));
+        const lo = Math.min(...runs), hi = Math.max(...runs), n = hi - lo + 1, hmax = Math.max(...hist.values());
+        const W = 900, H = 260, L = 10, B = 34, bw = (W - 2 * L) / n;
+        const x = w => L + (w - lo) * bw;
+        const mark = (w, label) => `<line x1="${x(w) + bw / 2}" x2="${x(w) + bw / 2}" y1="14" y2="${H - B}" stroke="var(--text)" stroke-dasharray="3 3"/><text x="${x(w) + bw / 2}" y="11" text-anchor="middle" style="fill:var(--text)">${label}: ${dateIn(w)}</text>`;
+        const svg = `<svg viewBox="0 0 ${W} ${H}">${[...hist].map(([w, c]) => `<rect x="${x(w) + 1}" y="${H - B - (H - B - 24) * c / hmax}" width="${Math.max(1, bw - 2)}" height="${(H - B - 24) * c / hmax}" fill="${w <= w50 ? OK : w <= w85 ? 'var(--accent)' : 'var(--new)'}"><title>Done in ${w} weeks (${dateIn(w)}): ${(100 * c / runs.length).toFixed(1)}% of futures</title></rect>`).join('')}
+          ${[...hist.keys()].filter((w, i, a) => n <= 20 || w % Math.ceil(n / 20) === 0).map(w => `<text x="${x(w) + bw / 2}" y="${H - B + 14}" text-anchor="middle">${w}w</text>`).join('')}
+          <text x="${W / 2}" y="${H - 4}" text-anchor="middle">weeks from today</text>${mark(w50, '50%')}${w85 !== w50 ? mark(w85, '85%') : ''}${w95 !== w85 ? mark(w95, '95%') : ''}</svg>`;
+        return `<p><b>${R.plural(left, 'item')} left.</b> Over the last 12 weeks the team finished ${Math.min(...weeks)}&ndash;${Math.max(...weeks)} a week (${done12} in all). ` +
+          `That gives a <b>50%</b> chance of being done by <b>${dateIn(w50)}</b>, <b>85%</b> by <b>${dateIn(w85)}</b> and <b>95%</b> by <b>${dateIn(w95)}</b>.</p>` +
+          (w95 >= CAP ? empty('Some futures never finished within 5 years: the recent pace is too slow for this much work.') : '') +
+          `<div class="card">${svg}</div><p class="sub">Finished per week, oldest to newest: ${weeks.slice().reverse().join(' &middot; ')}. Scope: open stories, technical stories and bugs that match the filters.</p>`;
+      }},
+
+    flow: {name: 'Sprint flow',
+      help: {q: 'What happened to each sprint\'s plan: how much was added part-way, finished, carried over or taken out?',
+        read: 'One row per recent sprint. "At start" is worked out from where items are now and the sprint moves seen in the change log. The bar shows how the sprint\'s work ended up: finished, still open, carried to a later sprint, or moved out.',
+        limits: 'Built from the change log, which only holds changes seen between refreshes: sprints that began before it started are marked, and their numbers are low. Counts stories, technical stories and bugs.'},
+      draw() {
+        const ch = (R.D.changes || []).filter(c => c.change === 'Sprint').map(c => Object.assign({t: Date.parse(c.when), a: R.spOfPath(c.from), b: R.spOfPath(c.to)}, c))
+          .filter(c => { const it = R.byId.get(c.id); return it && it.level === 2 && it.bucket !== 'removed' && R.pass(it); });
+        const logStart = (R.D.changes || []).reduce((m, c) => Math.min(m, Date.parse(c.when) || Infinity), Infinity);
+        const end = R.curIdx >= 0 ? R.curIdx : R.SPR.length - 1, sprints = [];
+        for (let i = Math.max(0, end - 5); i <= end; i++) if (R.SPR[i] && R.SPR[i].start) sprints.push(i);
+        if (!sprints.length) return empty('No sprints with dates were found for the team.');
+        const items = work();
+        const rows = sprints.map(i => {
+          const S = Date.parse(R.SPR[i].start), E = Date.parse(R.SPR[i].finish || R.SPR[i].start) + DAY;
+          const now = items.filter(it => it.sp === i), ids = new Set(now.map(it => it.id));
+          const added = new Set(ch.filter(c => c.b === i && c.a !== i && c.t > S && c.t < E).map(c => c.id));
+          now.forEach(it => { if (Date.parse(it.created) > S) added.add(it.id); });
+          const outs = new Map(); ch.filter(c => c.a === i && c.b !== i && c.t > S && c.t < E + 7 * DAY && !ids.has(c.id)).forEach(c => outs.set(c.id, c));
+          const carried = [...outs.values()].filter(c => c.b > i).length, moved = outs.size - carried;
+          const fin = now.filter(it => it.bucket === 'done').length, open = now.length - fin;
+          return {i, start: now.length - [...added].filter(id => ids.has(id)).length + outs.size, added: added.size, fin, open, carried, moved, partial: logStart > S};
+        });
+        const max = Math.max(1, ...rows.map(r => r.fin + r.open + r.carried + r.moved));
+        const seg = (n, c, what) => n ? `<i title="${n} ${what}" style="display:inline-block;height:12px;width:${100 * n / max}%;background:${c}"></i>` : '';
+        return table(['Sprint', 'At start', 'Added part-way', 'Finished', 'Still open', 'Carried to a later sprint', 'Moved out', 'How it ended'],
+          rows.map(r => `<tr><td>${R.esc(R.SPR[r.i].name)}${r.i === R.curIdx ? ' <span class="sub">(now)</span>' : ''}${r.partial ? ' <span class="sub" title="The change log starts after this sprint began, so moves before then are missing">*</span>' : ''}<div class="sub">${R.fmtDate(R.SPR[r.i].start)} &ndash; ${R.fmtDate(R.SPR[r.i].finish)}</div></td>
+            <td class="hc">${r.start}</td><td class="hc">${r.added}</td><td class="hc">${r.fin}</td><td class="hc">${r.open}</td><td class="hc">${r.carried}</td><td class="hc">${r.moved}</td>
+            <td style="min-width:220px;white-space:nowrap">${seg(r.fin, OK, 'finished')}${seg(r.open, 'var(--new)', 'still open')}${seg(r.carried, WARN, 'carried to a later sprint')}${seg(r.moved, BAD, 'moved out')}</td></tr>`)) +
+          `<div class="legend"><span style="--c:var(--done)">Finished</span><span style="--c:var(--new)">Still open</span><span style="--c:${WARN}">Carried over</span><span style="--c:${BAD}">Moved out</span></div>` +
+          (rows.some(r => r.partial) ? empty(`* The change log starts ${isFinite(logStart) ? R.fmtDate(new Date(logStart).toISOString()) : 'later'}, after this sprint began: moves before then are missing, so these numbers are low.`) : '');
+      }},
+
+    prs: {name: 'PR flow',
+      help: {q: 'Where do pull requests wait, and for how long?',
+        read: 'One row per repo. "Typical time to merge" is the median from opening to completing, over PRs completed in the last 90 days; "85% within" is how long most took. "Open now" and "oldest" show what\'s waiting. "Open on finished work" counts open PRs whose linked work items are all done, often forgotten PRs.',
+        click: 'Click a PR in the list below to open it in Azure DevOps.',
+        limits: 'Only sees PRs linked to work items in this report.'},
+      draw() {
+        const repo = new Map(R.D.graph.nodes.filter(n => n.kind === 'Repo').map(n => [n.id, n.label])), now = Date.now();
+        const prs = R.D.graph.nodes.filter(n => n.kind === 'PR' && (n.wis || []).some(id => R.byId.has(id) && R.pass(R.byId.get(id))));
+        if (!prs.length) return empty('No pull requests are linked to work items in view.');
+        if (!prs.some(n => n.created)) return empty('This data was saved before pull request dates were read. Refresh to include them.');
+        const by = new Map();
+        prs.forEach(n => { const k = n.repo || ''; let r = by.get(k); if (!r) by.set(k, r = {merged: [], open: [], onDone: 0});
+          if (n.status === 'completed' && n.created && n.closed && now - Date.parse(n.closed) < 90 * DAY) r.merged.push((Date.parse(n.closed) - Date.parse(n.created)) / DAY);
+          if (n.status === 'active') { r.open.push(n); if ((n.wis || []).every(id => R.byId.has(id) && R.byId.get(id).bucket === 'done')) r.onDone++; } });
+        const rows = [...by].sort((a, b) => b[1].open.length - a[1].open.length || b[1].merged.length - a[1].merged.length);
+        const age = n => n.created ? (now - Date.parse(n.created)) / DAY : null;
+        const mmax = Math.max(1, ...rows.map(([, r]) => pct(r.merged, .5) || 0));
+        const open = prs.filter(n => n.status === 'active' && n.created).sort((a, b) => age(b) - age(a)).slice(0, 12);
+        return table(['Repo', 'Completed (90 days)', 'Typical time to merge', '85% within', 'Open now', 'Oldest open', 'Open on finished work'],
+          rows.map(([k, r]) => { const med = pct(r.merged, .5), old = r.open.length ? Math.max(...r.open.map(n => age(n) || 0)) : null;
+            return `<tr><td>${R.esc(repo.get(k) || 'Other project')}</td><td class="hc">${r.merged.length}</td><td style="white-space:nowrap">${med == null ? '<span class="sub">none</span>' : `<i style="display:inline-block;height:9px;width:${Math.round(90 * med / mmax)}px;background:var(--accent);margin-right:6px"></i>${fmtDays(med)}`}</td>
+              <td class="hc">${fmtDays(pct(r.merged, .85))}</td><td class="hc">${r.open.length}</td><td class="hc">${fmtDays(old)}</td><td class="hc rc" style="--c:${r.onDone ? WARN : OK}"><i></i>${r.onDone}</td></tr>`; })) +
+          (open.length ? '<h3 style="margin-top:12px">Waiting longest</h3>' + table(['Pull request', 'Repo', 'Open for', 'Linked work'],
+            open.map(n => `<tr><td><a href="${R.esc(n.url)}" target="_blank" rel="noopener">${R.esc(short(n.label, 70))}</a></td><td>${R.esc(repo.get(n.repo) || '')}</td><td class="hc">${fmtDays(age(n))}</td><td>${(n.wis || []).slice(0, 4).map(id => R.byId.get(id)).filter(Boolean).map(it => `${R.link(it)} ${R.pill(it)}`).join(' ')}</td></tr>`)) : '');
+      }},
+
+    teams: {name: 'Cross-team',
+      help: {q: 'Which teams wait on which other teams, and where are those hand-offs late?',
+        read: 'Teams are area paths. Rows are the team that has to deliver (the predecessor); columns are the team waiting on it. Each number is open dependencies between them; red counts are out of order (the predecessor is planned after the item waiting on it, or not planned). The diagonal is work within one team.',
+        click: 'Hover a number to see the items. Pick how deep the area path goes to change what counts as a team.',
+        limits: 'Only sees dependency links between items in this report.'},
+      draw() {
+        const depth = R.store.get('labTeamDepth', 2);
+        const team = it => (it.area || '').split('\\').slice(0, depth).join('\\') || '(no area)';
+        const pairs = depPairs().filter(p => p.st !== 'done');
+        const pick = `<p class="sub">Team = area path to level <select id="x-depth">${[1, 2, 3, 4].map(d => `<option${d === depth ? ' selected' : ''}>${d}</option>`).join('')}</select></p>`;
+        if (!pairs.length) return pick + empty('No open dependency links between items in view.');
+        const m = new Map(), tot = new Map();
+        pairs.forEach(p => { const a = team(p.A), b = team(p.B), k = a + '|' + b; let c = m.get(k); if (!c) m.set(k, c = {n: 0, late: 0, list: []});
+          c.n++; if (p.st === 'bad') c.late++; c.list.push(p); tot.set(a, (tot.get(a) || 0) + 1); tot.set(b, (tot.get(b) || 0) + 1); });
+        const teams = [...tot.keys()].sort((a, b) => tot.get(b) - tot.get(a) || a.localeCompare(b)).slice(0, 30);
+        const max = Math.max(1, ...[...m.values()].map(c => c.n));
+        const name = t => R.esc(t.split('\\').slice(1).join('\\') || t);
+        return pick + table(['Delivers &darr; / waits &rarr;', ...teams.map(t => `<span title="${R.esc(t)}">${name(t)}</span>`)],
+          teams.map(a => `<tr><td title="${R.esc(a)}"><b>${name(a)}</b></td>${teams.map(b => { const c = m.get(a + '|' + b); if (!c) return '<td></td>';
+            const tip = c.list.slice(0, 12).map(p => `#${p.A.id} ${p.A.title}  ->  #${p.B.id} ${p.B.title} (${ST[p.st][1]})`).join('\n');
+            return `<td class="hc" title="${R.esc(tip)}" style="background:color-mix(in srgb, var(--accent) ${a === b ? 6 : Math.round(10 + 50 * c.n / max)}%, transparent)">${c.n}${c.late ? ` <b style="color:${BAD}">(${c.late} late)</b>` : ''}</td>`; }).join('')}</tr>`)) +
+          (tot.size > 30 ? empty(`The 30 busiest of ${tot.size} teams shown.`) : '');
+      }}
+  };
+
+  function renderLab() {
+    R = window.reportApi; if (!R) return;
+    let v = R.store.get('labView', 'ready'); if (!MAPS[v]) v = 'ready';
+    $('#xview').innerHTML = Object.keys(MAPS).map(k => `<button data-v="${k}"${k === v ? ' class="on"' : ''}>${MAPS[k].name}</button>`).join('');
+    $('#xview').onclick = e => { const b = e.target.closest('button[data-v]'); if (b) { R.store.set('labView', b.dataset.v); renderLab(); } };
+    $('#xinfo').innerHTML = R.filtersOn() ? '<b>Filters apply</b>' : 'Whole scope';
+    try { $('#xhelp').innerHTML = R.explainer('x-' + v, MAPS[v].help); } catch (e) { $('#xhelp').innerHTML = ''; }
+    let html;
+    try { html = MAPS[v].draw(); } catch (e) { console.error(e); html = R.failBox(MAPS[v].name, e); }
+    $('#xbody').innerHTML = html;
+    const d = $('#x-depth'); if (d) d.onchange = () => { R.store.set('labTeamDepth', +d.value); renderLab(); };
+  }
+  window.renderLab = renderLab;
+  window.labMaps = MAPS;   // for the tests
+  if (window.reportApi && window.reportApi.activeTab() === 'lab') renderLab();
+})();
 </script>
 </body>
 </html>
@@ -3415,7 +3782,7 @@ else {
     $signature = "$Org|$Project|$($Types -join ',')|$AreaPath|$($EpicId -join ',')|$([bool]$IncludeRemoved)|$ClosedWithinDays"
     $cache = @{}; $since = $null
     $wc = Read-JsonFile $WiCachePath
-    if ($wc -and $wc.version -eq 3 -and $wc.signature -eq $signature) {   # v3 added acceptance criteria
+    if ($wc -and $wc.version -eq 4 -and $wc.signature -eq $signature) {   # v3 added acceptance criteria, v4 the activated date
         foreach ($ci in $wc.items) { $cache[[int]$ci.id] = $ci }
         $prevRunUtc = [string]$wc.lastRunUtc
         $since = ([datetime]$wc.lastRunUtc).ToUniversalTime().AddMinutes(-10).ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -3427,7 +3794,7 @@ else {
 
     Sync-WorkItems $cache $since $runUtc $changeLog -FetchAll:$Full
     $raw = @($cache.Values)
-    Write-JsonFile $WiCachePath @{ version = 3; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
+    Write-JsonFile $WiCachePath @{ version = 4; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
 
     $typeNames = @($raw | ForEach-Object { $_.fields.'System.WorkItemType' } | Where-Object { $_ } | Sort-Object -Unique)
     Write-Host 'Reading state categories, sprints, repos...'
