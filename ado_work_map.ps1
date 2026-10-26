@@ -1191,6 +1191,9 @@ function New-DemoData {
         if ($s -and $p) { $p.relations.Add(@{ rel = 'System.LinkTypes.Dependency-Forward'; url = (WiUrl $s.id) }); $s.fields.Remove('Microsoft.VSTS.Common.AcceptanceCriteria') }
         [void](New-Item2 'User Story' 'Spike: compare offline sync libraries' $null 'New' $sp @{})
     }
+    # ...and an unfinished story still sitting in a sprint that ended (Sprint 13 has always ended, whatever the weekday)
+    $f0 = @($raw | Where-Object { $_.fields.'System.WorkItemType' -eq 'Feature' })[0]
+    [void](New-Item2 'User Story' 'Wire up audit logging for refunds' $f0 'Active' $sprints[2] @{ 'Microsoft.VSTS.Scheduling.StoryPoints' = 3; 'Microsoft.VSTS.Common.AcceptanceCriteria' = 1 })
     # A month of change-log entries, as if the script had run every few days
     $changes = New-Object 'Collections.Generic.List[object]'
     foreach ($w in $raw) {
@@ -1310,7 +1313,7 @@ input[type=search]{min-width:200px}
 details.fold>summary{cursor:pointer;font-weight:600;margin:14px 0 8px}
 /* two-pane delivery map */
 .panes{display:grid;grid-template-columns:330px 1fr;gap:12px;align-items:start}
-.elist{position:sticky;top:56px;max-height:calc(100vh - 80px);display:flex;flex-direction:column}
+.elist{position:sticky;top:calc(var(--fbh,56px) + 8px);max-height:calc(100vh - var(--fbh,56px) - 24px);display:flex;flex-direction:column}
 .elist .items{overflow:auto;margin-top:6px}
 .ep{display:grid;grid-template-columns:1fr auto;gap:2px 8px;width:100%;text-align:left;background:none;border:0;border-radius:6px;padding:6px 8px;color:var(--text);cursor:pointer;font:inherit}
 .ep:hover{background:var(--hover)} .ep.on{background:var(--sel)}
@@ -1337,7 +1340,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 .tablewrap{overflow-x:auto}
 tr.click{cursor:pointer} tr.click:hover td{background:var(--hover)} tr.on td{background:var(--sel)}
 /* sprints */
-.strip{position:sticky;top:56px;z-index:4;background:var(--bg);display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px}
+.strip{position:sticky;top:var(--fbh,56px);z-index:4;background:var(--bg);display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px}
 .sp{flex:0 0 170px;display:flex;flex-direction:column;gap:3px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text);cursor:pointer;font:inherit}
 .sp:hover{background:var(--hover)} .sp.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .sp.tf-current b::after{content:" \2022 now";color:var(--accent);font-size:11px}
@@ -1348,6 +1351,8 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 .acheck>summary h3{display:inline;margin:0} .acheck .why{margin:2px 0 8px} .acheck td.ev{max-width:520px}
 .acheck .lim{font-style:italic}
 #a-checks .menu input[type=number]{width:60px}
+#a-checks .menu{left:auto;right:0;width:340px;max-width:calc(100vw - 32px)}
+#a-checks .menu label{white-space:normal;align-items:flex-start}
 @media (min-width:901px){
   #sprints.det.on{display:grid;grid-template-columns:minmax(0,1fr) clamp(340px,32%,560px);column-gap:12px;align-items:start}
   #sprints.det #sbody{display:contents}
@@ -1360,10 +1365,11 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 .hmwrap #hm{min-width:0;overflow-x:auto}
 .hmside{display:flex;flex-direction:column;gap:12px;min-width:0}
 @media (max-width:1100px){.hmwrap{grid-template-columns:minmax(0,1fr)}}
-.smap{position:relative;overflow:auto;max-height:calc(100vh - 220px)}
+.smap{position:sticky;top:calc(var(--fbh,56px) + 8px);overflow:auto;max-height:calc(100vh - var(--fbh,56px) - 24px)}
+#sprints.vmap #strip{position:static}
 #smtip{pointer-events:auto;line-height:1.7;white-space:normal;max-width:460px;max-height:320px;overflow:auto;z-index:4}
 #smtip .badge{margin-right:4px}
-.smap table{border-radius:0}
+.smap table{border-radius:0;overflow:visible}   /* overflow:hidden on a table cancels its sticky header */
 .smap th,.smap td{white-space:nowrap;padding:4px 6px}
 .smap th:first-child,.smap td:first-child{position:sticky;left:0;background:var(--panel);z-index:1;max-width:320px;overflow:hidden;text-overflow:ellipsis}
 .smap thead th{position:sticky;top:0;background:var(--panel);z-index:2;cursor:pointer}
@@ -1550,6 +1556,9 @@ const store = {
   set(k, v) { try { localStorage.setItem('adomap.' + D.project + '.' + k, JSON.stringify(v)); } catch (e) {} }
 };
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+// The filter bar's real height, for everything that sticks below it (it wraps to two rows on narrow screens)
+{ const fb = document.querySelector('.fbar'), set = () => document.documentElement.style.setProperty('--fbh', fb.offsetHeight + 'px');
+  set(); if (window.ResizeObserver) new ResizeObserver(set).observe(fb); }
 const byId = new Map(D.items.map(i => [i.id, i]));
 const C = D.typeColors;
 const SPR = D.sprints || [];
@@ -1857,6 +1866,7 @@ function renderSprints() {
   if (on && !renderSprints.scrolled && strip.clientWidth) { strip.scrollLeft = on.offsetLeft - strip.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2; renderSprints.scrolled = true; }
   segSet('#sview', 'v', sprintView);
   $('#sprints').classList.toggle('det', sprintView === 'detail');
+  $('#sprints').classList.toggle('vmap', sprintView === 'map');
   if (sprintView === 'velocity') renderVelocity(st);
   else if (sprintView === 'map') renderSprintMap();
   else renderSprintDetail(st);
@@ -2060,7 +2070,7 @@ function renderAttention() {
     (filtersOn() ? ' &middot; <b>filters apply</b>' : '') + (D.sprint ? ` &middot; ${curSprintLabel()}` : '');
   $('#a-menu').innerHTML = ATTN.map(c => `<label><input type="checkbox" data-c="${c.id}"${attnCfg.off[c.id] ? '' : ' checked'}> ${esc(c.name)}</label>` +
     (c.param ? `<label style="padding-left:26px" class="sub">after <input type="number" min="1" max="365" id="a-stale" value="${attnCfg.staleDays}"> days</label>` : '') +
-    (c.mode ? `<label style="padding-left:26px" class="sub"><select id="a-est"><option value="auto"${attnCfg.estimate === 'auto' ? ' selected' : ''}>Auto</option><option value="always"${attnCfg.estimate === 'always' ? ' selected' : ''}>Always</option></select> Auto: only when at least half the stories in sprints are estimated</label>` : '')).join('') +
+    (c.mode ? `<label style="padding-left:26px" class="sub"><select id="a-est"><option value="auto"${attnCfg.estimate === 'auto' ? ' selected' : ''}>Auto</option><option value="always"${attnCfg.estimate === 'always' ? ' selected' : ''}>Always</option></select> <span>Auto runs it when at least half the stories in sprints are estimated</span></label>` : '')).join('') +
     '<p class="sub def">Saved in this browser only.</p>';
   $('#abody').innerHTML = res.map(({c, skip, items}) => {
     const why = typeof c.why === 'function' ? c.why() : c.why, all = attnShowAll.has(c.id), rows = all ? items : items.slice(0, 50);

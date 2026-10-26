@@ -2,6 +2,12 @@
 
 Every release of ADO Work Map (PowerShell script and VS Code extension), newest first. Back to the [README](README.md).
 
+### 1.5.1 &mdash; preview: frozen sprint headers, Checks menu
+
+- **Sprint map:** the row with the sprint names stays in view while you scroll down through epics and features (the table's own styling was cancelling its frozen header).
+- **Sprints:** the sprint cards stick flush under the filter bar, whatever its height, with no gap for content to show through.
+- **Needs attention:** the **Checks** menu opens leftward from its button, so it no longer runs off the right edge of the page; its text wraps.
+
 ### 1.5.0 &mdash; preview
 
 - **Needs attention** (new first tab): unassigned work in the current sprint, work waiting on unfinished predecessors, unfinished work still in sprints that have ended, items with no recent updates, stories without an estimate or acceptance criteria, and stories without a parent. Each finding shows why, with dates and a link; each check says what it can't see, can be turned off, and follows the filter bar. The estimate check is **Auto** (runs when at least half the stories in sprints have points or effort, and says so when it skips) or **Always**.

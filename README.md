@@ -346,7 +346,7 @@ The cache belongs to one scope. When the scope changes, the next run pulls every
 
 ## Latest updates
 
-**1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+**1.5.1 (preview)**: the sprint names stay frozen at the top of the sprint map and sprint detail while you scroll, and the Needs attention **Checks** menu fits on screen. It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
 
 Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 

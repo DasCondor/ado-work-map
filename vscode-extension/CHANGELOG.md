@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1 (preview)
+
+- Sprint map: the sprint-name row stays in view while scrolling; the sprint cards stick flush under the filter bar
+- Needs attention: the Checks menu fits on screen
+
 ## 1.5.0 (preview)
 
 - Check Connection command: tests the token, project, team, sprints and permissions, and lists your teams if the team name is wrong
