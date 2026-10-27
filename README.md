@@ -120,6 +120,10 @@ The connections: work items, their parent/child, related and dependency links, a
 
 <img src="docs/images/spider-web.png" alt="Spider web: a graph of work items, pull requests, branches, commits and repositories" width="900">
 
+### Settings
+
+Set your **status flows** (the steps stories go through, by area path, iteration or swim lane), which planning data the report uses (**swim lane**, **Start Date**, **End Date**), and the UAT lane. Needs attention then finds stuck work, skipped steps, work past its end date and UAT-lane stories without a UAT task. Click **Export** and put `ado_work_map.settings.json` next to the script so every report uses them (VS Code saves them for you).
+
 ### Experimental
 
 Eight new maps to try, each with a short **How to read this map** box: **feature readiness** (is each open feature ready to plan?), **people load** (remaining hours per person per sprint), **dependencies** (are predecessors planned first?), **work aging** (what's been in progress longest), **forecast** (likely finish dates from the team's real pace), **sprint flow** (added, finished, carried over), **PR flow** (time to merge and waiting PRs per repo) and **cross-team** (which area paths wait on which). They may change; if one can't be drawn, the rest of the report still works.
@@ -350,7 +354,7 @@ The cache belongs to one scope. When the scope changes, the next run pulls every
 
 ## Latest updates
 
-**1.5.2 (preview)**: an **Experimental** tab with eight new maps (feature readiness, people load, dependencies, work aging, forecast, sprint flow, PR flow, cross-team), each with a foldable **How to read this map** box; a map that can't be drawn no longer affects the rest of the report. It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+**1.6.0 (preview)**: a **Settings** tab for status flows, swim lanes and story dates, a **Lane** filter, and four new Needs attention checks (stuck, skipped a step, past its end date, no UAT task in the UAT lane). It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
 
 Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 

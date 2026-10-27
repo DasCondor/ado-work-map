@@ -2,6 +2,18 @@
 
 Every release of ADO Work Map (PowerShell script and VS Code extension), newest first. Back to the [README](README.md).
 
+### 1.6.0 &mdash; preview: status flows, swim lanes, settings
+
+- **Settings tab** in the Work Map:
+  - **Status flows:** the steps your stories go through (e.g. New > Ready > In Progress > Review > Resolved), by area path, iteration and/or swim lane. A step matches the board column, or else the state.
+  - **Planning data the maps use:** turn Swim lane, Start Date and End Date on or off, and pick the date fields.
+  - **UAT and stuck work:** the UAT swim lane (default BA Review), the UAT task title, and how many days in one step counts as stuck.
+  - Saved for the whole project in the Azure DevOps extension, by VS Code for its reports, or exported as `ado_work_map.settings.json` next to the script.
+- **Swim lanes:** each story's board lane and column are read; a **Lane** filter joins the filter bar and the lane shows beside the state.
+- **Needs attention:** four new checks: stuck in one step of its flow, skipped a step, past its end date, and in the UAT lane without a UAT task.
+- **Experimental maps:** Work aging follows your flow order, Dependencies flags a predecessor that ends after the waiting item starts, and Sprint flow counts moves to the UAT lane.
+- **The first refresh after updating re-reads every work item once** (to read lanes, columns and dates).
+
 ### 1.5.2 &mdash; preview: experimental maps
 
 - **Experimental tab** with eight new maps, each with a short **How to read this map** box you can fold away once you know it:

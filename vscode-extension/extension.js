@@ -46,6 +46,7 @@ function dataDir() {
   const op = orgProject(), name = `${op.org || 'org'}_${op.project || 'project'}`.replace(/[^\w.-]+/g, '_');
   return path.join(ctx.globalStorageUri.fsPath, name);
 }
+const settingsFile = () => path.join(ctx.globalStorageUri.fsPath, 'report_settings.json');
 const demoDir = () => path.join(ctx.globalStorageUri.fsPath, 'demo');
 const reportPath = demo => path.join(demo ? demoDir() : dataDir(), 'ado_work_map.html');
 const scriptPath = () => ctx.asAbsolutePath(path.join('resources', 'ado_work_map.ps1'));
@@ -68,6 +69,7 @@ function buildArgs(action, extra) {
       if (!(extra || []).includes(flag)) a.push(flag, String(c.get(key)));
     if (c.get('closedWithinDays') >= 0) a.push('-ClosedWithinDays', String(c.get('closedWithinDays')));
     if (c.get('includeRemoved')) a.push('-IncludeRemoved');
+    a.push('-SettingsPath', settingsFile());
   }
   return a.concat(ACTIONS[action].args, extra || []);
 }
@@ -169,7 +171,14 @@ async function openReport(demo, where) {
     reportPanel = vscode.window.createWebviewPanel('adoWorkMap.report', 'ADO Work Map', vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
     reportPanel.iconPath = vscode.Uri.file(ctx.asAbsolutePath('media/icon.png'));
     reportPanel.onDidDispose(() => { reportPanel = null; });
-    reportPanel.webview.onDidReceiveMessage(m => { if (m && m.type === 'open' && /^https:\/\//.test(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url)); });
+    reportPanel.webview.onDidReceiveMessage(m => {
+      if (m && m.type === 'open' && /^https:\/\//.test(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url));
+      // The report's Settings tab: kept here, and passed to the script on every run
+      if (m && m.type === 'settings' && m.settings && typeof m.settings === 'object' && !reportPanel.demo) {
+        try { fs.mkdirSync(path.dirname(settingsFile()), { recursive: true }); fs.writeFileSync(settingsFile(), JSON.stringify(m.settings, null, 2)); }
+        catch (e) { vscode.window.showErrorMessage('ADO Work Map: could not save the report settings: ' + e.message); }
+      }
+    });
   }
   loadReportInto(reportPanel, !!demo);
 }
@@ -179,10 +188,12 @@ function loadReportInto(panel, demo) {
   const html = fs.readFileSync(reportPath(demo), 'utf8');
   // The report is self-contained: allow only its own inline code, and send external links to the browser
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">`;
+  // In <head>, so the report finds reportHost (where its Settings are saved) when it starts
   const bridge = `<script>(function(){const api=acquireVsCodeApi();const go=u=>api.postMessage({type:'open',url:u});
 document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="https://"]');if(a&&!e.defaultPrevented){e.preventDefault();go(a.href);}});
-if(!(typeof D!=='undefined'&&D.demo))window.open=u=>{if(u&&/^https:/.test(u))go(u);return null;};})();</script>`;
-  panel.webview.html = html.replace('<head>', '<head>' + csp).replace('</body>', bridge + '</body>');
+const op=window.open;window.open=(u,...r)=>{if(typeof D!=='undefined'&&D.demo)return op.call(window,u,...r);if(u&&/^https:/.test(u))go(u);return null;};
+window.reportHost={where:'vscode',saveSettings:s=>{api.postMessage({type:'settings',settings:s});return Promise.resolve();}};})();</script>`;
+  panel.webview.html = html.replace('<head>', '<head>' + csp + bridge);
 }
 
 // ---------- status ----------

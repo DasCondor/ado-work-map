@@ -24,9 +24,21 @@ try {
     ok(typeof D === 'object' && D.items.length > 0, 'the report script runs and has data');
     ok(curIdx >= 0, 'there is a current sprint (or the next one, between sprints)');
     const res = Object.fromEntries(attnFindings().map(x => [x.c.id, x]));
-    for (const id of ['unassigned', 'blocked', 'past', 'estimate', 'ac', 'orphan']) ok(res[id] && !res[id].skip && res[id].items.length > 0, 'Needs attention finds the demo case for: ' + id);
+    for (const id of ['unassigned', 'blocked', 'past', 'estimate', 'ac', 'orphan', 'stuck', 'skipped', 'late', 'uat']) ok(res[id] && !res[id].skip && res[id].items.length > 0, 'Needs attention finds the demo case for: ' + id);
     ok(res.orphan.items.every(i => i.parent == null && i.kind !== 'Bug'), 'stories without a parent really have none');
     ok(res.unassigned.items.every(i => !i.assignee && i.sp === curIdx), 'unassigned items are unassigned and in the current sprint');
+    // Settings: flows, swim lanes and dates
+    ok(res.uat.items.length === 2 && res.uat.items.every(i => i.lane === 'BA Review'), 'stories in the BA Review lane without a UAT task are found, and the one with a task is not');
+    ok(res.skipped.items.some(i => skipsOf(i).some(x => x.missed.includes('In Progress'))), 'a jump from Ready to Review is a skipped step');
+    ok(res.late.items.some(i => i.title === 'Wire up audit logging for refunds'), 'a story past its End Date is found');
+    ok(flowOf(res.uat.items[0]).name === 'BA Review', 'a story in the BA Review lane follows the BA Review flow');
+    showTab('settings'); ok(document.querySelectorAll('#settings .flowc').length === 3, 'the Settings tab lists the flows');
+    document.querySelector('#settings [data-use="lane"]').click(); document.querySelector('#settings [data-act="save"]').click();
+    ok(!res.uat.c.skip() === false && document.getElementById('f-lane').hidden, 'turning Swim lane off hides the lane filter and skips the lane check');
+    document.querySelector('#settings [data-use="lane"]').click(); document.querySelector('#settings [data-act="save"]').click();
+    F.lane = ['BA Review']; ok(D.items.filter(pass).length === 3, 'the lane filter keeps only that lane'); F.lane = [];
+    ok(normSet({flows: [{name: 'x', steps: []}, 'junk'], stuckDays: 'abc'}).flows.length === 0 && normSet(null).stuckDays === 10, 'odd settings fall back to defaults');
+    showTab('attention');
     const word = D.sprint.timeFrame === 'future' ? 'upcoming' : 'current';
     ok(document.querySelector('#meta').textContent.includes(word + ' sprint: ' + D.sprint.name), `the header calls ${D.sprint.name} the ${word} sprint`);
     ok(document.querySelector('#nav, nav') && ATTN[0].name.includes(word), 'the checks use the same word');

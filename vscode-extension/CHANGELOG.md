@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0 (preview)
+
+- Settings tab: status flows, swim lane / Start Date / End Date on or off, UAT lane; VS Code saves them and passes them to every refresh
+- Swim lanes and board columns read; Lane filter
+- Needs attention: stuck in a step, skipped a step, past its end date, UAT lane without a UAT task
+- The first refresh after updating re-reads every work item once
+
 ## 1.5.2 (preview)
 
 - Experimental tab: eight new maps (feature readiness, people load, dependencies, work aging, forecast, sprint flow, PR flow, cross-team), each with a How to read this map box

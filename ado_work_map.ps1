@@ -101,6 +101,7 @@ param(
     [int]$MaxPrDetails = 500,
     [string]$OutDir,
     [string]$ConfigPath,
+    [string]$SettingsPath,
     [switch]$SaveConfig,
     [switch]$NoOpen,
     [switch]$Full,
@@ -488,11 +489,25 @@ function ConvertTo-Hashtable($Dict) {
     return $h
 }
 
+# Team settings (status flows, swim lanes, story dates), made in the report's Settings tab and exported next to this script
+if (-not $SettingsPath) { $SettingsPath = Join-Path $ScriptDir 'ado_work_map.settings.json' }
+$ReportSettings = $null
+if (-not $Demo -and (Test-Path $SettingsPath)) {
+    try { $ReportSettings = Get-Content $SettingsPath -Raw | ConvertFrom-Json; Write-Host "Using report settings from $SettingsPath" }
+    catch { Write-Warning "Report settings in $SettingsPath can't be read, so they're ignored: $_" }
+}
+$StartField = 'Microsoft.VSTS.Scheduling.StartDate'; $EndField = 'Microsoft.VSTS.Scheduling.TargetDate'
+if ($ReportSettings -and $ReportSettings.dates) {
+    if ("$($ReportSettings.dates.start)".Trim()) { $StartField = "$($ReportSettings.dates.start)".Trim() }
+    if ("$($ReportSettings.dates.end)".Trim()) { $EndField = "$($ReportSettings.dates.end)".Trim() }
+}
+
 $CacheFields = @('System.WorkItemType', 'System.State', 'System.IterationPath', 'System.Title', 'System.AssignedTo', 'System.AreaPath',
     'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
     'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
     'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria',
-    'Microsoft.VSTS.Common.ActivatedDate')
+    'Microsoft.VSTS.Common.ActivatedDate', 'System.BoardLane', 'System.BoardColumn')
+$CacheFields = @($CacheFields + $StartField + $EndField | Select-Object -Unique)
 $CacheRels = @('System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink')
 
 function ConvertTo-CacheItem($w) {
@@ -525,7 +540,8 @@ function Compare-CacheItem($Old, $New, [string]$When, $Log) {
     $base = @{ when = $When; id = [int]$New.id; type = [string]$n.'System.WorkItemType'; title = [string]$n.'System.Title' }
     $checks = @(
         @('State', 'System.State'), @('Sprint', 'System.IterationPath'), @('Title', 'System.Title'),
-        @('Area', 'System.AreaPath'), @('Points', 'Microsoft.VSTS.Scheduling.StoryPoints'))
+        @('Area', 'System.AreaPath'), @('Points', 'Microsoft.VSTS.Scheduling.StoryPoints'),
+        @('Column', 'System.BoardColumn'), @('Lane', 'System.BoardLane'))
     foreach ($c in $checks) {
         $a = "$($o.($c[1]))"; $b = "$($n.($c[1]))"
         if ($a -ne $b) { $e = $base.Clone(); $e.change = $c[0]; $e.from = $a; $e.to = $b; $Log.Add($e) }
@@ -827,6 +843,10 @@ function Build-Model($Raw, $Cats, $SprintInfo, $Repos, $PrDetails) {
             changed   = [string]$f.'System.ChangedDate'
             closed    = [string]$f.'Microsoft.VSTS.Common.ClosedDate'
             activated = [string]$f.'Microsoft.VSTS.Common.ActivatedDate'
+            lane      = [string]$f.'System.BoardLane'
+            column    = [string]$f.'System.BoardColumn'
+            start     = [string]$f.$StartField
+            end       = [string]$f.$EndField
             ac        = [bool]$f.'Microsoft.VSTS.Common.AcceptanceCriteria'
             inSprint  = [bool]($sprintPath -and ($itPath -eq $sprintPath -or $itPath.StartsWith("$sprintPath\", [StringComparison]::OrdinalIgnoreCase)))
             url       = "$ProjUrl/_workitems/edit/$id"
@@ -1247,7 +1267,58 @@ function New-DemoData {
             }
         }
     }
-    return @{ raw = $raw; cats = $cats; iterations = $iterations; repos = $repos; prs = $prDetails; changes = @($changes | Sort-Object { $_.when }); commits = $commits }
+    # Board columns, swim lanes and story dates, for the status flows (all from $rnd2, so the data above stays the same)
+    $colOf = @{ New = 'New'; Active = 'In Progress'; Resolved = 'Resolved'; Closed = 'Closed' }
+    foreach ($w in $raw) {
+        $f = $w.fields; $state = [string]$f.'System.State'
+        if ($f.'System.WorkItemType' -eq 'Task' -or -not $colOf.ContainsKey($state)) { continue }
+        $col = $colOf[$state]
+        if ($state -eq 'New' -and $rnd2.NextDouble() -lt 0.5) { $col = 'Ready' }
+        elseif ($state -eq 'Active' -and $rnd2.NextDouble() -lt 0.3) { $col = 'Review' }
+        elseif ($state -eq 'Resolved' -and "$($f.'System.AreaPath')" -notlike "*\Web*") { $col = 'Testing' }
+        $f['System.BoardColumn'] = $col
+        $itp = [string]$f.'System.IterationPath'
+        if ($sprintStart.ContainsKey($itp) -and $rnd2.NextDouble() -lt 0.6) {
+            $f['Microsoft.VSTS.Scheduling.StartDate'] = Iso $sprintStart[$itp]
+            $f['Microsoft.VSTS.Scheduling.TargetDate'] = Iso $sprintStart[$itp].AddDays(25)
+        }
+    }
+    $open = @($raw | Where-Object { $_.fields.'System.IterationPath' -eq $current -and @('User Story', 'Technical Story') -contains $_.fields.'System.WorkItemType' -and @('New', 'Active') -contains $_.fields.'System.State' })
+    # Three stories in the BA Review lane; only the first has its UAT testing task
+    $ba = @($open | Select-Object -First 3)
+    foreach ($w in $ba) {
+        $w.fields['System.BoardLane'] = 'BA Review'
+        $changes.Add(@{ when = Iso ((Get-Date).Date.AddDays(-4).AddHours(10)); id = $w.id; type = $w.fields.'System.WorkItemType'; title = $w.fields.'System.Title'; change = 'Lane'; from = ''; to = 'BA Review' })
+    }
+    if ($ba.Count) {
+        $id = $st.nextId; $st.nextId = $st.nextId + 1
+        $raw.Add(@{ id = $id; relations = (New-Object 'Collections.Generic.List[object]'); fields = @{ 'System.WorkItemType' = 'Task'; 'System.Title' = "UAT testing for #$($ba[0].id)"
+            'System.State' = 'New'; 'System.IterationPath' = $current; 'System.AreaPath' = $ba[0].fields.'System.AreaPath'; 'System.Tags' = ''
+            'System.AssignedTo' = @{ displayName = $people[0] }; 'System.CreatedDate' = Iso ((Get-Date).AddDays(-3)); 'System.ChangedDate' = Iso ((Get-Date).AddDays(-3))
+            'Microsoft.VSTS.Scheduling.RemainingWork' = 4 } })
+        $raw[$raw.Count - 1].relations.Add(@{ rel = 'System.LinkTypes.Hierarchy-Reverse'; url = (WiUrl $ba[0].id) })
+    }
+    # One story that jumped from Ready straight to Review, and one in Review for three weeks
+    $rest = @($raw | Where-Object { $_.fields.'System.IterationPath' -eq $current -and @('User Story', 'Technical Story', 'Bug') -contains $_.fields.'System.WorkItemType' -and
+        $_.fields.'System.State' -eq 'Active' -and -not $_.fields.'System.BoardLane' })
+    foreach ($k in 0..1) {
+        if ($rest.Count -le $k) { break }
+        $w = $rest[$k]; $w.fields['System.BoardColumn'] = 'Review'
+        $changes.Add(@{ when = Iso ((Get-Date).Date.AddDays(@(-5, -21)[$k]).AddHours(11)); id = $w.id; type = $w.fields.'System.WorkItemType'; title = $w.fields.'System.Title'
+            change = 'Column'; from = @('Ready', 'In Progress')[$k]; to = 'Review' })
+    }
+    # The story stranded in an ended sprint is past its end date too
+    $late = @($raw | Where-Object { $_.fields.'System.Title' -eq 'Wire up audit logging for refunds' }) | Select-Object -First 1
+    if ($late) { $late.fields['Microsoft.VSTS.Scheduling.StartDate'] = Iso $sprintStart[$sprints[2]]; $late.fields['Microsoft.VSTS.Scheduling.TargetDate'] = Iso $sprintStart[$sprints[2]].AddDays(25) }
+    $settings = @{
+        use = @{ start = $true; end = $true; lane = $true }
+        flows = @(
+            @{ name = 'BA Review'; lane = 'BA Review'; steps = @('New', 'Ready', 'In Progress', 'Review', 'Testing (UAT)', 'Resolved', 'Closed') },
+            @{ name = 'New operations'; area = "$Project\Web"; steps = @('New', 'Ready', 'In Progress', 'Review', 'Resolved') },
+            @{ name = 'Maintenance'; steps = @('New', 'Ready', 'In Progress', 'Review', 'Testing', 'Resolved', 'Closed') })
+        uat = @{ lane = 'BA Review'; title = 'UAT testing' }; stuckDays = 10
+    }
+    return @{ raw = $raw; cats = $cats; iterations = $iterations; repos = $repos; prs = $prDetails; changes = @($changes | Sort-Object { $_.when }); commits = $commits; settings = $settings }
 }
 
 # --------------------------------------------------------------------------- #
@@ -1412,6 +1483,12 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 #lab .dep td{padding:3px 4px;min-width:70px} #lab .dep td.ln{background:linear-gradient(var(--c),var(--c)) center/100% 3px no-repeat}
 #lab .chip{display:inline-block;border:2px solid var(--c);border-radius:12px;padding:0 6px;font-size:11.5px;white-space:nowrap;background:var(--panel)}
 #lab .hc{text-align:right;font-variant-numeric:tabular-nums}
+.pills{display:inline-flex;gap:4px;flex-wrap:wrap;justify-self:start} .pill.lanep{color:var(--muted);border-style:dashed}
+#settings .setc{margin-bottom:12px;max-width:1100px;padding:10px 14px} #settings .setc h3{margin:2px 0 4px}
+#settings .frow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0;font-size:13px}
+#settings input[type=text],#settings input[type=number]{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font:inherit;font-size:13px}
+#settings input.wide{flex:1;min-width:320px}
+#settings .flowc{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:8px 0;background:var(--bg)}
 #trend text,#velo text,#hm text{fill:var(--muted);font-size:11px}
 /* maps narrowed to one sprint */
 .scopebar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px solid var(--accent);border-left-width:5px;border-radius:8px;background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
@@ -1471,12 +1548,14 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
   <button data-tab="maps">Maps</button>
   <button data-tab="web">Spider web</button>
   <button data-tab="lab">Experimental</button>
+  <button data-tab="settings">Settings</button>
 </nav>
 <div class="fbar">
   <input type="search" id="f-q" placeholder="Search title, #id, person, tag">
   <details class="pick" id="f-epic"></details>
   <details class="pick" id="f-person"></details>
   <details class="pick" id="f-area"></details>
+  <details class="pick" id="f-lane" hidden></details>
   <details class="pick" id="f-tag"></details>
   <details class="pick" id="f-notag"></details>
   <button class="btn" id="f-clear">Clear filters</button>
@@ -1591,6 +1670,10 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
   <div id="xhelp"></div>
   <div id="xbody"><div class="card xfail"><b>The experimental maps didn't load.</b> <span class="sub">The rest of the report works as usual.</span></div></div>
 </section>
+
+<section id="settings">
+  <div id="setbody"></div>
+</section>
 </main>
 <script>
 const D = __DATA__;
@@ -1662,22 +1745,52 @@ const sprintName = it => it.sp >= 0 ? SPR[it.sp].name : '';
 const spOfPath = path => { let p = String(path || '').toLowerCase();   // sprint index of an iteration path, or -1
   while (p) { if (sprintIndex.has(p)) return sprintIndex.get(p); const k = p.lastIndexOf('\\'); if (k < 0) break; p = p.slice(0, k); } return -1; };
 
+// ---------- team settings: status flows, and which planning data the report uses ----------
+// Saved for the whole project by the Azure DevOps extension, by VS Code for its reports, or in this
+// browser (Export puts them in a file the script reads). Anything missing or odd falls back to the defaults.
+const SET_DEF = {dates: {start: 'Microsoft.VSTS.Scheduling.StartDate', end: 'Microsoft.VSTS.Scheduling.TargetDate'}, uat: {lane: 'BA Review', title: 'UAT testing'}, stuckDays: 10};
+function normSet(x) {
+  x = x && typeof x === 'object' ? x : {};
+  const str = (v, d) => typeof v === 'string' && v.trim() ? v.trim() : d, use = x.use || {}, dates = x.dates || {}, uat = x.uat || {};
+  return {
+    use: {start: use.start !== false, end: use.end !== false, lane: use.lane !== false},
+    dates: {start: str(dates.start, SET_DEF.dates.start), end: str(dates.end, SET_DEF.dates.end)},
+    flows: (Array.isArray(x.flows) ? x.flows : []).filter(f => f && typeof f === 'object').slice(0, 50).map(f => ({name: str(f.name, 'Flow'), area: str(f.area, ''), iteration: str(f.iteration, ''), lane: str(f.lane, ''),
+      steps: (Array.isArray(f.steps) ? f.steps : []).map(v => String(v).trim()).filter(Boolean).slice(0, 30)})).filter(f => f.steps.length),
+    uat: {lane: str(uat.lane, SET_DEF.uat.lane), title: str(uat.title, SET_DEF.uat.title)},
+    stuckDays: Math.max(1, Math.min(365, Math.round(+x.stuckDays) || SET_DEF.stuckDays))
+  };
+}
+const setHost = !D.demo && window.reportHost || null;   // the extension or VS Code keeps the settings for everyone using it
+let SET = normSet(setHost ? D.settings : store.get('settings', null) || D.settings);
+const laneOf = it => SET.use.lane ? it.lane || '' : '';
+const startOf = it => SET.use.start ? it.start || '' : '';
+const endOf = it => SET.use.end ? it.end || '' : '';
+const useLane = () => SET.use.lane && D.items.some(i => i.lane);
+const under = (p, root) => { p = String(p || '').toLowerCase(); root = root.toLowerCase(); return !root || p === root || p.startsWith(root + '\\'); };
+const flowIn = (flows, it) => flows.find(f => under(it.area, f.area) && under(it.iteration, f.iteration) && (!f.lane || f.lane.toLowerCase() === laneOf(it).toLowerCase())) || null;
+const flowOf = it => it.level === 2 ? flowIn(SET.flows, it) : null;
+const stepIn = (f, v) => f ? f.steps.findIndex(x => x.toLowerCase() === String(v || '').toLowerCase()) : -1;
+const stepVal = it => { const f = flowOf(it); return f && stepIn(f, it.column) >= 0 ? it.column : it.state; };   // the board column when the flow names it, else the state
+const stepOf = it => stepIn(flowOf(it), stepVal(it));
+
 // ---------- global filters ----------
 // People, tags and excluded tags are lists. The area path can have a saved default; excluded tags survive Clear filters.
 let defArea = store.get('defaultArea', '');
-const blankF = () => ({q: '', epic: '', person: [], area: defArea, tag: [], notag: []});
+const blankF = () => ({q: '', epic: '', person: [], area: defArea, lane: [], tag: [], notag: []});
 const F = Object.assign(blankF(), store.get('filters', {}));
-['person', 'tag', 'notag'].forEach(k => { if (!Array.isArray(F[k])) F[k] = F[k] ? [F[k]] : []; });
-const KEYS = ['q', 'epic', 'person', 'area', 'tag', 'notag'];
+['person', 'lane', 'tag', 'notag'].forEach(k => { if (!Array.isArray(F[k])) F[k] = F[k] ? [F[k]] : []; });
+const KEYS = ['q', 'epic', 'person', 'area', 'lane', 'tag', 'notag'];
 const tagsOf = it => (it.tags || '').split(/;\s*/).filter(Boolean);
 function passK(it, k) {   // one filter at a time, so each list in the bar can be narrowed by the others
   switch (k) {
     case 'epic': return !F.epic || (F.epic === 'none' ? it.epic == null : String(it.epic) === F.epic);
     case 'person': return !F.person.length || F.person.includes(it.assignee || '-');
     case 'area': return !F.area || it.area === F.area || it.area.startsWith(F.area + '\\');
+    case 'lane': return !F.lane.length || !useLane() || F.lane.includes(laneOf(it) || '-');
     case 'tag': return !F.tag.length || tagsOf(it).some(t => F.tag.includes(t));
     case 'notag': return !F.notag.length || !tagsOf(it).some(t => F.notag.includes(t));
-    case 'q': return !F.q || `#${it.id} ${it.title} ${it.assignee} ${it.tags} ${it.state}`.toLowerCase().includes(F.q);
+    case 'q': return !F.q || `#${it.id} ${it.title} ${it.assignee} ${it.tags} ${it.state} ${it.column || ''} ${laneOf(it)}`.toLowerCase().includes(F.q);
   }
   return true;
 }
@@ -1733,6 +1846,9 @@ function buildFilterBar() {
   pick('f-area', {key: 'area', label: 'Area path', all: 'All areas', items: uniq(cand('area').map(i => i.area)).map(a => [a, a]),
     extra: F.area ? `<label class="def"><input type="checkbox" id="f-areadef"${defArea === F.area ? ' checked' : ''}> Open with this area path</label>`
       : defArea ? `<p class="sub def">Default: ${esc(defArea)}</p>` : ''});
+  $('#f-lane').hidden = !useLane();
+  if (useLane()) { const cl = cand('lane');
+    pick('f-lane', {key: 'lane', multi: true, label: 'Lanes', all: 'Any lane', items: (cl.some(i => !i.lane) ? [['-', 'Default lane']] : []).concat(uniq(cl.map(i => i.lane)).map(l => [l, l]))}); }
   pick('f-tag', {key: 'tag', multi: true, label: 'Tags', all: 'Any tag', items: uniq(cand('tag').flatMap(tagsOf)).map(t => [t, t])});
   pick('f-notag', {key: 'notag', multi: true, label: 'Excluded tags', all: 'Exclude tags', items: uniq(D.items.flatMap(tagsOf)).map(t => [t, t])});
   $('#f-q').value = F.q;
@@ -1758,7 +1874,8 @@ $('#f-clear').onclick = () => { Object.assign(F, blankF(), {notag: F.notag}); $(
 const bar = r => { const t = (r.done + r.active + r.new) || 1;
   return `<div class="bar" title="${r.done} done, ${r.active} in progress, ${r.new} not started"><i class="b-done" style="width:${r.done/t*100}%"></i><i class="b-active" style="width:${r.active/t*100}%"></i><i class="b-new" style="width:${r.new/t*100}%"></i></div>`; };
 const badge = it => `<span class="badge" style="--c:${C[it.kind] || '#888'}" title="${esc(it.type)}">${esc(it.type)}</span>`;
-const pill = it => `<span class="pill p-${it.bucket}">${esc(it.state)}</span>`;
+const pill = it => { const p = `<span class="pill p-${it.bucket}">${esc(it.state)}</span>`;
+  return laneOf(it) ? `<span class="pills">${p}<span class="pill lanep" title="Swim lane on the board">${esc(it.lane)}</span></span>` : p; };
 const link = it => `<a class="wid" href="${esc(it.url)}" target="_blank" rel="noopener" title="Open #${it.id} in Azure DevOps">#${it.id}<span aria-hidden="true">&#8599;</span></a>`;
 const segSet = (sel, attr, val) => $$(sel + ' button').forEach(b => b.classList.toggle('on', b.dataset[attr] === String(val)));
 
@@ -1820,6 +1937,7 @@ function showTab(t) {
   if (t === 'web') initGraph();
   if (t === 'maps') safe(renderMaps, $('#mbody'), 'This map');
   if (t === 'lab' && window.renderLab) safe(window.renderLab, $('#xbody'), 'The experimental maps');
+  if (t === 'settings') safe(renderSettings, $('#setbody'), 'Settings');
   if (t === 'sprints' && !renderSprints.scrolled) renderSprints();
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -2091,6 +2209,16 @@ const preds = new Map();
 const sprintStories = D.items.filter(i => isStory(i) && i.sp >= 0);
 let pointed = sprintStories.filter(i => i.points != null).length;
 const usesPoints = () => pointed > 0 && pointed / sprintStories.length >= .5;   // Auto: at least half the stories in sprints are estimated
+// Moves between steps come from the change log (state and board column changes seen between refreshes)
+const movesById = new Map();
+(D.changes || []).forEach(c => { if (c.change !== 'State' && c.change !== 'Column') return; if (!movesById.has(c.id)) movesById.set(c.id, []); movesById.get(c.id).push(c); });
+movesById.forEach(a => a.sort((x, y) => Date.parse(x.when) - Date.parse(y.when)));
+const enteredAt = it => { const v = String(stepVal(it)).toLowerCase(); let w = null; (movesById.get(it.id) || []).forEach(c => { if (String(c.to).toLowerCase() === v) w = c.when; }); return w; };
+const skipsOf = it => { const f = flowOf(it); if (!f) return [];
+  return (movesById.get(it.id) || []).filter(c => daysAgo(c.when) <= 30).map(c => ({c, a: stepIn(f, c.from), b: stepIn(f, c.to)}))
+    .filter(x => x.a >= 0 && x.b > x.a + 1).map(x => ({when: x.c.when, from: f.steps[x.a], to: f.steps[x.b], missed: f.steps.slice(x.a + 1, x.b)})); };
+const noFlows = () => !SET.flows.length && 'No status flows are set up yet. Add them under Settings.';
+const hasUat = it => it.children.some(id => { const k = byId.get(id); return k && k.type === 'Task' && k.bucket !== 'removed' && (k.title.toLowerCase().includes(SET.uat.title.toLowerCase()) || /\buat\b/i.test(k.title)); });
 const ATTN = [
   {id: 'unassigned', name: `Unassigned work in the ${curWord} sprint`,
     why: `In the ${curWord} sprint, not done, and nobody is assigned.`,
@@ -2114,6 +2242,19 @@ const ATTN = [
     limit: '"Changed" counts any edit to the item, including comments.',
     test: it => isOpen(it) && it.level >= 2 && (it.bucket === 'active' || it.sp === curIdx) && daysAgo(it.changed) >= attnCfg.staleDays,
     ev: it => `${esc(it.state)} &middot; last changed ${fmtDate(it.changed)} (${plural(daysAgo(it.changed), 'day')} ago) &middot; ${spLabel(it.sp)}`},
+  {id: 'stuck', name: 'Stuck in one step of its flow',
+    why: () => `In the same step of its status flow for ${SET.stuckDays} days or more (change this under Settings).`,
+    limit: 'When a story entered its step comes from the change log, so a story that hasn\'t moved since the log began isn\'t judged. The first and last steps are left out.',
+    skip: noFlows,
+    test: it => { if (!isOpen(it)) return false; const f = flowOf(it), k = stepOf(it); if (!f || k <= 0 || k >= f.steps.length - 1) return false;
+      const w = enteredAt(it); return !!w && daysAgo(w) >= SET.stuckDays; },
+    ev: it => `In <b>${esc(stepVal(it))}</b> since ${fmtDate(enteredAt(it))} (${plural(daysAgo(enteredAt(it)), 'day')}) &middot; flow: ${esc(flowOf(it).name)}`},
+  {id: 'skipped', name: 'Skipped a step of its flow',
+    why: 'Moved past one or more steps of its status flow in the last 30 days.',
+    limit: 'Only sees moves between refreshes: a story that went through several steps between two refreshes looks like it skipped them.',
+    skip: noFlows,
+    test: it => it.bucket !== 'removed' && skipsOf(it).length > 0,
+    ev: it => skipsOf(it).map(x => `${fmtDate(x.when)}: ${esc(x.from)} &rarr; ${esc(x.to)}, skipping ${x.missed.map(esc).join(', ')}`).join('<br>') + ` &middot; flow: ${esc(flowOf(it).name)}`},
   {id: 'estimate', name: 'Stories without an estimate', mode: true,
     why: 'In the current or an upcoming sprint with no story points or effort.',
     skip: () => attnCfg.estimate === 'auto' && !usesPoints() &&
@@ -2130,7 +2271,19 @@ const ATTN = [
     why: 'Not done and not under a feature or epic, so it doesn\'t roll up into any progress.',
     limit: 'Bugs are left out: they often have no parent on purpose.',
     test: it => isStory(it) && isOpen(it) && it.parent == null,
-    ev: it => `${esc(it.type)} &middot; ${esc(it.state)} &middot; created ${fmtDate(it.created)} &middot; in ${spLabel(it.sp)}`}
+    ev: it => `${esc(it.type)} &middot; ${esc(it.state)} &middot; created ${fmtDate(it.created)} &middot; in ${spLabel(it.sp)}`},
+  {id: 'late', name: 'Past its end date',
+    why: 'Not done, and its End Date has passed.',
+    limit: 'Uses the End Date field set under Settings; turn End Date off there if your team doesn\'t keep it up to date.',
+    skip: () => !SET.use.end ? 'End Date is turned off under Settings.' : !D.items.some(i => i.end) && 'No work item has an End Date.',
+    test: it => isOpen(it) && (it.level === 1 || it.level === 2) && !!endOf(it) && Date.parse(endOf(it)) + 864e5 < Date.now(),
+    ev: it => `End Date ${fmtDate(endOf(it))} (${plural(daysAgo(endOf(it)), 'day')} ago) &middot; ${esc(it.state)} &middot; ${spLabel(it.sp)}`},
+  {id: 'uat', name: 'In the UAT lane without a UAT task',
+    why: () => `In the "${SET.uat.lane}" swim lane, not done, and no task under it has "${SET.uat.title}" or "UAT" in its title.`,
+    limit: 'Sprint planning in the Azure DevOps extension can draft the task.',
+    skip: () => !SET.use.lane ? 'Swim lane is turned off under Settings.' : !D.items.some(i => i.lane) && 'No work item has a swim lane (a row on the board) set.',
+    test: it => it.level === 2 && isOpen(it) && laneOf(it).toLowerCase() === SET.uat.lane.toLowerCase() && !hasUat(it),
+    ev: it => `In the ${esc(it.lane)} lane &middot; ${esc(it.state)}${it.column ? ' (' + esc(it.column) + ')' : ''} &middot; ${spLabel(it.sp)}`}
 ];
 let attnShowAll = new Set();
 function attnFindings() {
@@ -2165,6 +2318,84 @@ $('#a-menu').addEventListener('change', e => {
   store.set('attention', attnCfg); renderAttention(); $('#a-checks').open = true;
 });
 $('#abody').addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (b) { attnShowAll.add(b.dataset.all); renderAttention(); } });
+
+// ---------- Settings ----------
+const EXAMPLE_FLOWS = [
+  {name: 'BA Review', area: '', iteration: '', lane: 'BA Review', steps: ['New', 'Ready', 'In Progress', 'Review', 'Testing (UAT)', 'Resolved', 'Closed']},
+  {name: 'New operations', area: '', iteration: '', lane: '', steps: ['New', 'Ready', 'In Progress', 'Review', 'Resolved']},
+  {name: 'Maintenance', area: '', iteration: '', lane: '', steps: ['New', 'Ready', 'In Progress', 'Review', 'Testing', 'Resolved', 'Closed']}];
+let setDraft = null;
+const setWhere = () => setHost ? (setHost.where === 'project' ? 'Saved for everyone in this project.' : 'Saved by VS Code; every refresh uses them.')
+  : D.demo ? 'Demo report: saved in this browser only.'
+  : 'Saved in this browser. To use them for every report the script makes, and to share them, click <b>Export</b> and put the file next to the script as <b>ado_work_map.settings.json</b>.';
+function renderSettings() {
+  const s = setDraft || (setDraft = normSet(SET)), work = D.items.filter(i => i.level === 2 && i.bucket !== 'removed');
+  const per = s.flows.map(() => 0); let none = 0;
+  work.forEach(it => { const f = flowIn(s.flows, it); if (f) per[s.flows.indexOf(f)]++; else none++; });
+  const have = k => D.items.filter(i => i[k]).length, n = (c, w) => `${c} ${c === 1 ? w : w === 'story' ? 'stories' : w + 's'}`;
+  const chk = (k, label, note) => `<label class="frow"><input type="checkbox" data-use="${k}"${s.use[k] ? ' checked' : ''}> <b>${label}</b> <span class="sub">${note}</span></label>`;
+  const known = uniq(work.flatMap(i => [i.column, i.state]));
+  $('#setbody').innerHTML = `<div class="card setc"><h3>Planning data the maps use</h3>
+    <p class="sub">Turn off anything your team doesn't keep up to date, so the report doesn't rely on it.</p>
+    ${chk('lane', 'Swim lane', `the row a story sits in on the Azure DevOps board &middot; ${n(have('lane'), 'work item')} in a lane other than the default`)}
+    ${chk('start', 'Start Date', n(have('start'), 'work item') + ' have one')}
+    <div class="frow" style="margin-left:24px">Field <input type="text" data-date="start" value="${esc(s.dates.start)}" size="44"></div>
+    ${chk('end', 'End Date', n(have('end'), 'work item') + ' have one')}
+    <div class="frow" style="margin-left:24px">Field <input type="text" data-date="end" value="${esc(s.dates.end)}" size="44"></div>
+    <p class="sub">A different date field is read from the next refresh, which then re-reads every work item once.</p></div>
+  <div class="card setc"><h3>Status flows</h3>
+    <p class="sub">The steps a story goes through, in order. A step matches the story's board column, or else its state. Each story follows the first flow that applies to it, top to bottom, so put the more specific ones (like a lane) first. Needs attention uses them to find stuck work and skipped steps, and Work aging puts its columns in this order.</p>
+    ${s.flows.map((f, i) => `<div class="flowc" data-i="${i}">
+      <div class="frow"><input type="text" data-f="name" value="${esc(f.name)}" placeholder="Flow name" size="24"><span class="sub">${n(per[i], 'story')} in this data follow${per[i] === 1 ? 's' : ''} it</span><span style="flex:1"></span>
+        <button class="btn" data-act="up"${i ? '' : ' disabled'}>Move up</button><button class="btn" data-act="down"${i < s.flows.length - 1 ? '' : ' disabled'}>Move down</button><button class="btn" data-act="del">Remove</button></div>
+      <div class="frow">Applies to: area path <input type="text" data-f="area" list="dl-area" value="${esc(f.area)}" placeholder="any" size="26"> iteration <input type="text" data-f="iteration" list="dl-iter" value="${esc(f.iteration)}" placeholder="any" size="26"> swim lane <input type="text" data-f="lane" list="dl-lane" value="${esc(f.lane)}" placeholder="any" size="16"></div>
+      <div class="frow">Steps <input type="text" class="wide" data-f="steps" value="${esc(f.steps.join(' > '))}" placeholder="New > Ready > In Progress > Review > Resolved > Closed"></div></div>`).join('')}
+    <div class="frow"><button class="btn" data-act="add">Add a flow</button>${s.flows.length ? '' : '<button class="btn" data-act="examples">Start from the example flows</button>'}<span class="sub">${n(none, 'story')} in this data follow${none === 1 ? 's' : ''} no flow</span></div>
+    ${known.length ? `<p class="sub">Board columns and states in this data: ${known.map(esc).join(', ')}</p>` : ''}</div>
+  <div class="card setc"><h3>UAT and stuck work</h3>
+    <div class="frow">Stories in the swim lane <input type="text" data-uat="lane" list="dl-lane" value="${esc(s.uat.lane)}" size="18"> need a task with <input type="text" data-uat="title" value="${esc(s.uat.title)}" size="18"> (or "UAT") in its title.</div>
+    <div class="frow">A story is stuck after <input type="number" min="1" max="365" data-stuck value="${s.stuckDays}" style="width:70px"> days in one step.</div></div>
+  <div class="toolbar"><button class="btn" data-act="save"><b>Save</b></button><button class="btn" data-act="export">Export</button><label class="btn">Import<input type="file" accept=".json,application/json" data-act="import" hidden></label><button class="btn" data-act="undo">Undo changes</button><span class="sub" id="set-msg"></span></div>
+  <p class="sub">${setWhere()}</p>
+  <datalist id="dl-area">${uniq(D.items.map(i => i.area)).map(a => `<option value="${esc(a)}">`).join('')}</datalist>
+  <datalist id="dl-iter">${SPR.map(x => `<option value="${esc(x.path)}">`).join('')}</datalist>
+  <datalist id="dl-lane">${uniq(D.items.map(i => i.lane)).map(l => `<option value="${esc(l)}">`).join('')}</datalist>`;
+}
+async function saveSettings() {
+  const s = normSet(setDraft), newFields = s.dates.start !== SET.dates.start || s.dates.end !== SET.dates.end;
+  try { if (setHost) await setHost.saveSettings(s); else store.set('settings', s); }
+  catch (e) { $('#set-msg').textContent = 'Not saved: ' + (e && e.message || e); return; }
+  SET = s; setDraft = null; rollMemo = new Map(); buildFilterBar(); syncFilterBar(); renderAll(); renderSettings();
+  $('#set-msg').textContent = 'Saved.' + (newFields ? ' The new date fields are read from the next refresh.' : '');
+}
+$('#settings').addEventListener('input', e => {
+  const t = e.target, s = setDraft; if (!s || t.type === 'file') return;
+  if (t.dataset.use) s.use[t.dataset.use] = t.checked;
+  else if (t.dataset.date) s.dates[t.dataset.date] = t.value;
+  else if (t.dataset.uat) s.uat[t.dataset.uat] = t.value;
+  else if ('stuck' in t.dataset) s.stuckDays = +t.value;
+  else if (t.dataset.f) { const f = s.flows[+t.closest('.flowc').dataset.i]; f[t.dataset.f] = t.dataset.f === 'steps' ? t.value.split(/\s*(?:>|,)\s*/).map(x => x.trim()).filter(Boolean) : t.value; }
+  else return;
+  $('#set-msg').textContent = 'Not saved yet';
+});
+$('#settings').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const s = setDraft, a = b.dataset.act, i = b.closest('.flowc') ? +b.closest('.flowc').dataset.i : -1;
+  if (a === 'save') { saveSettings(); return; }
+  if (a === 'export') { const url = URL.createObjectURL(new Blob([JSON.stringify(normSet(s), null, 2)], {type: 'application/json'}));
+    const x = document.createElement('a'); x.href = url; x.download = 'ado_work_map.settings.json'; document.body.appendChild(x); x.click(); x.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); return; }
+  if (a === 'add') s.flows.push({name: 'New flow', area: '', iteration: '', lane: '', steps: []});
+  else if (a === 'examples') s.flows = JSON.parse(JSON.stringify(EXAMPLE_FLOWS));
+  else if (a === 'del') s.flows.splice(i, 1);
+  else if (a === 'up' || a === 'down') { const j = a === 'up' ? i - 1 : i + 1; [s.flows[i], s.flows[j]] = [s.flows[j], s.flows[i]]; }
+  else if (a === 'undo') setDraft = null;
+  renderSettings(); $('#set-msg').textContent = a === 'undo' ? '' : 'Not saved yet';
+});
+$('#settings').addEventListener('change', e => { const t = e.target; if (t.dataset.act !== 'import' || !t.files || !t.files[0]) return;
+  const r = new FileReader();
+  r.onload = () => { try { setDraft = normSet(JSON.parse(r.result)); renderSettings(); $('#set-msg').textContent = 'Imported: check it, then Save.'; }
+    catch (err) { $('#set-msg').textContent = 'That isn\'t a settings file: ' + err.message; } };
+  r.readAsText(t.files[0]); });
 
 // ---------- Changes ----------
 let cRange = store.get('cRange', 'latest'), cView = 'log', cType = '', cShown = 300;
@@ -3061,7 +3292,7 @@ function initGraph() {
 
 // What the experimental maps (their own script, below) may use
 window.reportApi = {D, byId, SPR, curIdx, esc, link, badge, pill, pass, fmtDate, daysAgo, plural, num, isOpen, preds, store,
-  spEnded, spOfPath, filtersOn, explainer, failBox, activeTab: () => activeTab};
+  spEnded, spOfPath, filtersOn, explainer, failBox, activeTab: () => activeTab, set: () => SET, flowOf, stepIn, stepVal, laneOf, startOf, endOf};
 buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
 </script>
 <script id="lab">
@@ -3096,6 +3327,8 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
       else if (A.sp > B.sp) { st = 'bad'; why = `The predecessor is planned ${R.plural(A.sp - B.sp, 'sprint')} after the item waiting on it.`; }
       else if (A.sp === B.sp) { st = 'warn'; why = 'Both are in the same sprint, so the predecessor has to finish first.'; }
       else { st = 'ok'; why = 'The predecessor is planned first.'; }
+      const ae = R.endOf(A), bs = R.startOf(B);   // dates, when the team keeps them, can show a clash inside the sprint order
+      if ((st === 'ok' || st === 'warn') && ae && bs && Date.parse(ae) > Date.parse(bs)) { st = 'bad'; why = `The predecessor ends ${R.fmtDate(ae)}, after the item waiting on it starts (${R.fmtDate(bs)}).`; }
       out.push({A, B, st, why});
     }));
     return out;
@@ -3166,7 +3399,7 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
       help: {q: 'Is work planned in the right order: does each predecessor land before the item waiting on it?',
         read: 'One row per dependency, worst first. The columns are sprints; the line runs from the predecessor ("first") to the item waiting on it ("waits"). Red = the predecessor is planned later than the item waiting on it, or not planned at all. Amber = both in the same sprint.',
         click: 'Click an id to open it in Azure DevOps.',
-        limits: 'Only sees predecessor/successor links between items in this report. Pairs whose predecessor is done are counted, not drawn.'},
+        limits: 'Only sees predecessor/successor links between items in this report. Pairs whose predecessor is done are counted, not drawn. With Start and End Date on (Settings), a predecessor that ends after the waiting item starts is red too.'},
       draw() {
         const all = depPairs(), pairs = all.filter(p => p.st !== 'done').sort((a, b) => RANK[a.st] - RANK[b.st] || a.B.sp - b.B.sp);
         const done = all.length - pairs.length;
@@ -3190,7 +3423,7 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
 
     aging: {name: 'Work aging',
       help: {q: 'Which items in progress have been going for longer than usual, and might be stuck?',
-        read: 'One dot per story, technical story or bug in progress, in a column for its state. Higher = more days since it was started (Activated Date). The lines show how long finished work took: half of it was done within the 50% line, most of it within the 85% line. Dots above the 85% line are red.',
+        read: 'One dot per story, technical story or bug in progress, in a column for its step (the board column, in the order of your status flows under Settings, or else the state). Higher = more days since it was started (Activated Date). The lines show how long finished work took: half of it was done within the 50% line, most of it within the 85% line. Dots above the 85% line are red.',
         click: 'Hover a dot to see the item; click it to open it in Azure DevOps.',
         limits: 'Needs the Activated Date field. Work finished in the last 120 days sets the lines.'},
       draw() {
@@ -3201,7 +3434,9 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
         if (!dated.length) return empty(active.length ? `${R.plural(active.length, 'item')} in progress, but none has an Activated Date. Refresh to read it (data saved before this version doesn't have it).` : 'Nothing in progress matches the filters.');
         const p50 = pct(cycle, .5), p85 = pct(cycle, .85);
         const pts = dated.map(it => ({it, age: (now - Date.parse(it.activated)) / DAY}));
-        const states = [...new Set(pts.map(p => p.it.state))];
+        // Columns are steps: the board column when a status flow names it, else the state, in flow order
+        const sv = it => R.stepVal(it), rank = v => Math.min(99, ...R.set().flows.map(f => { const k = R.stepIn(f, v); return k < 0 ? 99 : k; }));
+        const states = [...new Set(pts.map(p => sv(p.it)))].sort((a, b) => rank(a) - rank(b));
         const W = 900, H = 340, L = 44, B = 26, top = 10, cw = (W - L - 10) / states.length;
         const ymax = Math.max(5, ...pts.map(p => p.age), p85 || 0) * 1.08, y = d => top + (H - top - B) * (1 - d / ymax);
         const col = a => p85 == null ? 'var(--accent)' : a > p85 ? BAD : p50 != null && a > p50 ? WARN : OK;
@@ -3209,9 +3444,9 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
         const ticks = []; const step = Math.max(1, Math.ceil(ymax / 6 / 5) * 5); for (let d = 0; d < ymax; d += step) ticks.push(d);
         const line = (d, label) => d == null ? '' : `<line x1="${L}" x2="${W - 10}" y1="${y(d)}" y2="${y(d)}" stroke="var(--muted)" stroke-dasharray="4 4"/><text x="${W - 12}" y="${y(d) - 4}" text-anchor="end">${label} (${fmtDays(d)})</text>`;
         const svg = `<svg viewBox="0 0 ${W} ${H}">${ticks.map(d => `<line x1="${L}" x2="${W - 10}" y1="${y(d)}" y2="${y(d)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(d) + 4}" text-anchor="end">${d}d</text>`).join('')}
-          ${states.map((s, k) => `<text x="${L + cw * (k + .5)}" y="${H - 8}" text-anchor="middle">${R.esc(short(s, 22))} (${pts.filter(p => p.it.state === s).length})</text>`).join('')}
+          ${states.map((s, k) => `<text x="${L + cw * (k + .5)}" y="${H - 8}" text-anchor="middle">${R.esc(short(s, 22))} (${pts.filter(p => sv(p.it) === s).length})</text>`).join('')}
           ${line(p50, '50% of finished work took less')}${line(p85, '85% took less')}
-          ${pts.map(p => `<a href="${R.esc(p.it.url)}" target="_blank" rel="noopener"><circle cx="${L + cw * (states.indexOf(p.it.state) + .5 + jit(p.it.id) * .6)}" cy="${y(p.age)}" r="5.5" fill="${col(p.age)}" fill-opacity=".85" stroke="var(--panel)"><title>#${p.it.id} ${R.esc(p.it.title)}\n${R.esc(p.it.state)}, started ${Math.floor(p.age)} days ago${p.it.assignee ? '\n' + R.esc(p.it.assignee) : ''}</title></circle></a>`).join('')}</svg>`;
+          ${pts.map(p => `<a href="${R.esc(p.it.url)}" target="_blank" rel="noopener"><circle cx="${L + cw * (states.indexOf(sv(p.it)) + .5 + jit(p.it.id) * .6)}" cy="${y(p.age)}" r="5.5" fill="${col(p.age)}" fill-opacity=".85" stroke="var(--panel)"><title>#${p.it.id} ${R.esc(p.it.title)}\n${R.esc(sv(p.it))}${R.laneOf(p.it) ? ' (' + R.esc(p.it.lane) + ' lane)' : ''}, started ${Math.floor(p.age)} days ago${p.it.assignee ? '\n' + R.esc(p.it.assignee) : ''}</title></circle></a>`).join('')}</svg>`;
         const oldest = pts.sort((a, b) => b.age - a.age).slice(0, 12);
         return `<div class="card">${svg}</div>` + (cycle.length ? '' : empty('No work with an Activated Date was finished in the last 120 days, so there are no lines to compare with.')) +
           (active.length > dated.length ? empty(`${active.length - dated.length} in-progress items have no Activated Date and aren't drawn.`) : '') +
@@ -3261,7 +3496,8 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
         const end = R.curIdx >= 0 ? R.curIdx : R.SPR.length - 1, sprints = [];
         for (let i = Math.max(0, end - 5); i <= end; i++) if (R.SPR[i] && R.SPR[i].start) sprints.push(i);
         if (!sprints.length) return empty('No sprints with dates were found for the team.');
-        const items = work();
+        const items = work(), U = R.set().uat.lane;
+        const toLane = R.set().use.lane ? (R.D.changes || []).filter(c => c.change === 'Lane' && String(c.to).toLowerCase() === U.toLowerCase()).map(c => ({id: c.id, t: Date.parse(c.when)})) : null;
         const rows = sprints.map(i => {
           const S = Date.parse(R.SPR[i].start), E = Date.parse(R.SPR[i].finish || R.SPR[i].start) + DAY;
           const now = items.filter(it => it.sp === i), ids = new Set(now.map(it => it.id));
@@ -3270,13 +3506,14 @@ buildFilterBar(); syncFilterBar(); renderAll(); showTab(activeTab);
           const outs = new Map(); ch.filter(c => c.a === i && c.b !== i && c.t > S && c.t < E + 7 * DAY && !ids.has(c.id)).forEach(c => outs.set(c.id, c));
           const carried = [...outs.values()].filter(c => c.b > i).length, moved = outs.size - carried;
           const fin = now.filter(it => it.bucket === 'done').length, open = now.length - fin;
-          return {i, start: now.length - [...added].filter(id => ids.has(id)).length + outs.size, added: added.size, fin, open, carried, moved, partial: logStart > S};
+          const lane = toLane ? new Set(toLane.filter(x => ids.has(x.id) && x.t > S && x.t < E).map(x => x.id)).size : 0;
+          return {i, start: now.length - [...added].filter(id => ids.has(id)).length + outs.size, added: added.size, fin, open, carried, moved, lane, partial: logStart > S};
         });
         const max = Math.max(1, ...rows.map(r => r.fin + r.open + r.carried + r.moved));
         const seg = (n, c, what) => n ? `<i title="${n} ${what}" style="display:inline-block;height:12px;width:${100 * n / max}%;background:${c}"></i>` : '';
-        return table(['Sprint', 'At start', 'Added part-way', 'Finished', 'Still open', 'Carried to a later sprint', 'Moved out', 'How it ended'],
+        return table(['Sprint', 'At start', 'Added part-way', 'Finished', 'Still open', 'Carried to a later sprint', 'Moved out', ...(toLane ? [`Moved to ${R.esc(U)}`] : []), 'How it ended'],
           rows.map(r => `<tr><td>${R.esc(R.SPR[r.i].name)}${r.i === R.curIdx ? ' <span class="sub">(now)</span>' : ''}${r.partial ? ' <span class="sub" title="The change log starts after this sprint began, so moves before then are missing">*</span>' : ''}<div class="sub">${R.fmtDate(R.SPR[r.i].start)} &ndash; ${R.fmtDate(R.SPR[r.i].finish)}</div></td>
-            <td class="hc">${r.start}</td><td class="hc">${r.added}</td><td class="hc">${r.fin}</td><td class="hc">${r.open}</td><td class="hc">${r.carried}</td><td class="hc">${r.moved}</td>
+            <td class="hc">${r.start}</td><td class="hc">${r.added}</td><td class="hc">${r.fin}</td><td class="hc">${r.open}</td><td class="hc">${r.carried}</td><td class="hc">${r.moved}</td>${toLane ? `<td class="hc">${r.lane}</td>` : ''}
             <td style="min-width:220px;white-space:nowrap">${seg(r.fin, OK, 'finished')}${seg(r.open, 'var(--new)', 'still open')}${seg(r.carried, WARN, 'carried to a later sprint')}${seg(r.moved, BAD, 'moved out')}</td></tr>`)) +
           `<div class="legend"><span style="--c:var(--done)">Finished</span><span style="--c:var(--new)">Still open</span><span style="--c:${WARN}">Carried over</span><span style="--c:${BAD}">Moved out</span></div>` +
           (rows.some(r => r.partial) ? empty(`* The change log starts ${isFinite(logStart) ? R.fmtDate(new Date(logStart).toISOString()) : 'later'}, after this sprint began: moves before then are missing, so these numbers are low.`) : '');
@@ -3779,10 +4016,10 @@ else {
     [void](New-Item -ItemType Directory -Force -Path $CacheDir)
 
     # Work items: reuse the cache when it was made with the same scope settings
-    $signature = "$Org|$Project|$($Types -join ',')|$AreaPath|$($EpicId -join ',')|$([bool]$IncludeRemoved)|$ClosedWithinDays"
+    $signature = "$Org|$Project|$($Types -join ',')|$AreaPath|$($EpicId -join ',')|$([bool]$IncludeRemoved)|$ClosedWithinDays|$StartField|$EndField"
     $cache = @{}; $since = $null
     $wc = Read-JsonFile $WiCachePath
-    if ($wc -and $wc.version -eq 4 -and $wc.signature -eq $signature) {   # v3 added acceptance criteria, v4 the activated date
+    if ($wc -and $wc.version -eq 5 -and $wc.signature -eq $signature) {   # v3 added acceptance criteria, v4 the activated date, v5 board lane and column
         foreach ($ci in $wc.items) { $cache[[int]$ci.id] = $ci }
         $prevRunUtc = [string]$wc.lastRunUtc
         $since = ([datetime]$wc.lastRunUtc).ToUniversalTime().AddMinutes(-10).ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -3794,7 +4031,7 @@ else {
 
     Sync-WorkItems $cache $since $runUtc $changeLog -FetchAll:$Full
     $raw = @($cache.Values)
-    Write-JsonFile $WiCachePath @{ version = 4; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
+    Write-JsonFile $WiCachePath @{ version = 5; signature = $signature; lastRunUtc = $runUtc; prevRunUtc = $prevRunUtc; items = $raw }
 
     $typeNames = @($raw | ForEach-Object { $_.fields.'System.WorkItemType' } | Where-Object { $_ } | Sort-Object -Unique)
     Write-Host 'Reading state categories, sprints, repos...'
@@ -3846,6 +4083,7 @@ $model.commits = @{ days = $CommitDays; rows = $commitRows }
 $model.demo = [bool]$Demo
 # Saved data from before acceptance criteria were read can't tell "none" from "not read"
 $model.acRead = [bool]($Demo -or -not $Offline -or ($wc -and [int]$wc.version -ge 3))
+$model.settings = if ($Demo) { $d.settings } else { $ReportSettings }
 
 $json = ConvertTo-Json -InputObject $model -Depth 12 -Compress
 $utf8 = New-Object Text.UTF8Encoding $false

@@ -20,7 +20,9 @@ const CACHE_FIELDS = ['System.WorkItemType', 'System.State', 'System.IterationPa
   'System.Tags', 'System.CreatedDate', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate',
   'Microsoft.VSTS.Scheduling.StoryPoints', 'Microsoft.VSTS.Scheduling.Effort',
   'Microsoft.VSTS.Scheduling.RemainingWork', 'Microsoft.VSTS.Scheduling.CompletedWork', 'Microsoft.VSTS.Common.AcceptanceCriteria',
-  'Microsoft.VSTS.Common.ActivatedDate'];
+  'Microsoft.VSTS.Common.ActivatedDate', 'System.BoardLane', 'System.BoardColumn'];
+// Story date fields: the defaults, or the ones picked in the report's Settings (team settings below)
+let dateFields = ['Microsoft.VSTS.Scheduling.StartDate', 'Microsoft.VSTS.Scheduling.TargetDate'];
 const CACHE_RELS = ['System.LinkTypes.Hierarchy-Reverse', 'System.LinkTypes.Related', 'System.LinkTypes.Dependency-Forward', 'ArtifactLink'];
 const MAX_CHANGES = 20000;
 
@@ -64,6 +66,28 @@ function readSettings() {
 function writeSettings(s) {
   try { localStorage.setItem(settingsKey(), JSON.stringify(s)); } catch (e) {}
 }
+
+// ---------------------------------------------------------------- team settings (one per project, shared by everyone)
+// Status flows, swim lanes and story dates, set in the report's Settings tab. Sprint planning reads them too.
+const TEAM_SETTINGS = 'report-settings';   // extension data collection; the document id is the project id
+let teamSet = null;
+async function dataManager() {
+  const svc = await SDK.getService('ms.vss-features.extension-data-service');
+  return svc.getExtensionDataManager(SDK.getExtensionContext().id, await SDK.getAccessToken());
+}
+async function loadTeamSettings() {
+  try { const doc = await (await dataManager()).getDocument(TEAM_SETTINGS, ctx.projectId); teamSet = doc && doc.settings || null; }
+  catch (e) { teamSet = null; }   // none saved yet: the report uses its defaults
+  const d = teamSet && teamSet.dates || {};
+  dateFields = [String(d.start || '').trim() || dateFields[0], String(d.end || '').trim() || dateFields[1]];
+}
+window.reportHost = {where: 'project', async saveSettings(s) {
+  const m = await dataManager(); let cur = null;
+  try { cur = await m.getDocument(TEAM_SETTINGS, ctx.projectId); } catch (e) {}
+  const doc = {id: ctx.projectId, settings: s};
+  if (cur) await m.setDocument(TEAM_SETTINGS, Object.assign(doc, {__etag: cur.__etag})); else await m.createDocument(TEAM_SETTINGS, doc);
+  teamSet = s;
+}};
 
 // ---------------------------------------------------------------- saved data (IndexedDB)
 const store = (() => {
@@ -184,7 +208,7 @@ async function getRevisions(ids) {
 // Keep only the fields and links the report uses
 function toCacheItem(w) {
   const f = {};
-  for (const k of CACHE_FIELDS) {
+  for (const k of [...new Set(CACHE_FIELDS.concat(dateFields))]) {
     let v = (w.fields || {})[k];
     if (v == null) continue;
     if (k === 'System.AssignedTo') v = {displayName: String(v.displayName || '')};
@@ -210,7 +234,7 @@ function compareItems(o, n, when, changes) {
   const base = {when, id: n.id, type: String(n.fields['System.WorkItemType'] || ''), title: String(n.fields['System.Title'] || '')};
   const add = (change, from, to) => changes.push(Object.assign({}, base, {change, from, to}));
   const checks = [['State', 'System.State'], ['Sprint', 'System.IterationPath'], ['Title', 'System.Title'],
-    ['Area', 'System.AreaPath'], ['Points', 'Microsoft.VSTS.Scheduling.StoryPoints']];
+    ['Area', 'System.AreaPath'], ['Points', 'Microsoft.VSTS.Scheduling.StoryPoints'], ['Column', 'System.BoardColumn'], ['Lane', 'System.BoardLane']];
   for (const [name, f] of checks) {
     const a = o.fields[f] == null ? '' : String(o.fields[f]), b = n.fields[f] == null ? '' : String(n.fields[f]);
     if (a !== b) add(name, a, b);
@@ -531,7 +555,8 @@ function buildModel(raw, cats, sprintInfo, repos, prs) {
       points: points == null ? null : points,
       remaining: f['Microsoft.VSTS.Scheduling.RemainingWork'] == null ? null : f['Microsoft.VSTS.Scheduling.RemainingWork'],
       completed: f['Microsoft.VSTS.Scheduling.CompletedWork'] == null ? null : f['Microsoft.VSTS.Scheduling.CompletedWork'],
-      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''), activated: String(f['Microsoft.VSTS.Common.ActivatedDate'] || ''), ac: !!f['Microsoft.VSTS.Common.AcceptanceCriteria'],
+      created: String(f['System.CreatedDate'] || ''), changed: String(f['System.ChangedDate'] || ''), closed: String(f['Microsoft.VSTS.Common.ClosedDate'] || ''), activated: String(f['Microsoft.VSTS.Common.ActivatedDate'] || ''),
+      lane: String(f['System.BoardLane'] || ''), column: String(f['System.BoardColumn'] || ''), start: String(f[dateFields[0]] || ''), end: String(f[dateFields[1]] || ''), ac: !!f['Microsoft.VSTS.Common.AcceptanceCriteria'],
       inSprint: !!(sprintPath && (itPath.toLowerCase() === sprintPath.toLowerCase() || itPath.toLowerCase().startsWith(sprintPath.toLowerCase() + '\\'))),
       url: `${ctx.projUrl}/_workitems/edit/${w.id}`, parent: null, children: []
     });
@@ -706,11 +731,11 @@ async function pull(full) {
   const changes = [];
 
   // Work items: reuse saved data when it was made with the same scope settings
-  const signature = [ctx.org, ctx.projectId, S.types.join(','), S.areaPath, S.epicIds.join(','), S.includeRemoved, S.closedWithinDays].join('|');
+  const signature = [ctx.org, ctx.projectId, S.types.join(','), S.areaPath, S.epicIds.join(','), S.includeRemoved, S.closedWithinDays, ...dateFields].join('|');
   const cache = new Map();
   let since = null, prevRunUtc = '';
   const wc = saved.wi;
-  if (wc && wc.version === 4 && wc.signature === signature) {   // v3 added acceptance criteria, v4 the activated date
+  if (wc && wc.version === 5 && wc.signature === signature) {   // v3 added acceptance criteria, v4 the activated date, v5 board lane and column
     for (const ci of wc.items) cache.set(ci.id, ci);
     prevRunUtc = wc.lastRunUtc;
     since = minusMinutes(wc.lastRunUtc, 10);
@@ -720,7 +745,7 @@ async function pull(full) {
 
   await syncWorkItems(cache, since, runUtc, changes, full, S);
   const raw = [...cache.values()];
-  await store.set(key('wi'), {version: 4, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
+  await store.set(key('wi'), {version: 5, signature, lastRunUtc: runUtc, prevRunUtc, items: raw});
 
   step('Reading state categories, sprints and repos...');
   const typeNames = [...new Set(raw.map(w => w.fields['System.WorkItemType']).filter(Boolean))].sort();
@@ -777,6 +802,7 @@ async function makeModel(data) {
   model.prevRunUtc = data.prevRunUtc;
   model.commits = {days: data.commitDays, rows: data.commitRows};
   model.demo = false;
+  model.settings = teamSet;
   return model;
 }
 
@@ -922,6 +948,7 @@ async function start() {
   $('#s-cancel').onclick = () => { $('#hub-settings').hidden = true; };
   $('#s-clear').onclick = clearSaved;
 
+  await loadTeamSettings();
   // Show what's saved straight away, then pull what changed
   const saved = await savedData().catch(() => null);
   if (saved) {
