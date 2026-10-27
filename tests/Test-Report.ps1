@@ -32,6 +32,11 @@ try {
     ok(res.skipped.items.some(i => skipsOf(i).some(x => x.missed.includes('In Progress'))), 'a jump from Ready to Review is a skipped step');
     ok(res.late.items.some(i => i.title === 'Wire up audit logging for refunds'), 'a story past its End Date is found');
     ok(flowOf(res.uat.items[0]).name === 'BA Review', 'a story in the BA Review lane follows the BA Review flow');
+    renderAttention();
+    const rowOf = id => [...document.querySelectorAll('#abody tr')].find(r => r.querySelector(`a[href$="/${id}"]`));
+    const ba = res.blocked.items.find(i => i.lane === 'BA Review');
+    ok(ba && /BA Review lane/.test(rowOf(ba.id).querySelector('.ev').textContent) && /Step .* of \d+ in BA Review/.test(rowOf(ba.id).querySelector('.ev').textContent), 'every check notes the BA Review lane and the flow step (e.g. waiting on predecessors)');
+    ok(/in the BA Review lane/.test(document.getElementById('ainfo').textContent), 'the summary counts flagged items in each lane');
     showTab('settings'); ok(document.querySelectorAll('#settings .flowc').length === 3, 'the Settings tab lists the flows');
     document.querySelector('#settings [data-use="lane"]').click(); document.querySelector('#settings [data-act="save"]').click();
     ok(!res.uat.c.skip() === false && document.getElementById('f-lane').hidden, 'turning Swim lane off hides the lane filter and skips the lane check');

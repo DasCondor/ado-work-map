@@ -2,7 +2,7 @@
   "name": "ado-work-map",
   "displayName": "ADO Work Map",
   "description": "Self-contained Azure DevOps work map: delivery map, sprints, changes, maps and a spider web of your work and repos, in one offline HTML report.",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "preview": true,
   "publisher": "DasCondor",
   "license": "MIT",

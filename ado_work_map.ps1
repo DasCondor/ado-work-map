@@ -1483,6 +1483,8 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 #lab .dep td{padding:3px 4px;min-width:70px} #lab .dep td.ln{background:linear-gradient(var(--c),var(--c)) center/100% 3px no-repeat}
 #lab .chip{display:inline-block;border:2px solid var(--c);border-radius:12px;padding:0 6px;font-size:11.5px;white-space:nowrap;background:var(--panel)}
 #lab .hc{text-align:right;font-variant-numeric:tabular-nums}
+.lanetag{display:inline-block;border:1px dashed var(--accent);color:var(--text);border-radius:9px;padding:0 7px;font-size:11px;background:color-mix(in srgb,var(--accent) 10%,var(--panel));white-space:nowrap}
+.lanenote{margin-top:3px}
 .pills{display:inline-flex;gap:4px;flex-wrap:wrap;justify-self:start} .pill.lanep{color:var(--muted);border-style:dashed}
 #settings .setc{margin-bottom:12px;max-width:1100px;padding:10px 14px} #settings .setc h3{margin:2px 0 4px}
 #settings .frow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0;font-size:13px}
@@ -2231,7 +2233,7 @@ const ATTN = [
     skip: () => curIdx < 0 && 'No current or upcoming sprint was found for the team, so this check can\'t run.',
     test: it => it.sp === curIdx && isOpen(it) && (preds.get(it.id) || []).some(p => byId.has(p) && byId.get(p).bucket !== 'done' && byId.get(p).bucket !== 'removed'),
     ev: it => 'Waits on ' + (preds.get(it.id) || []).map(p => byId.get(p)).filter(p => p && p.bucket !== 'done' && p.bucket !== 'removed')
-      .map(p => `${link(p)} ${esc(p.state)}${p.sp >= 0 ? ' in ' + esc(SPR[p.sp].name) : ', no sprint'}`).join(', ')},
+      .map(p => `${link(p)} ${esc(p.state)}${laneOf(p) ? ` <span class="lanetag">${esc(p.lane)} lane</span>` : ''}${p.sp >= 0 ? ' in ' + esc(SPR[p.sp].name) : ', no sprint'}`).join(', ')},
   {id: 'past', name: 'Unfinished work in sprints that have ended',
     why: 'Not done, and still assigned to a sprint whose end date has passed.',
     limit: 'Shows where items are assigned now. It isn\'t carryover history: revisions aren\'t read, so it can\'t tell when an item was moved.',
@@ -2286,6 +2288,15 @@ const ATTN = [
     ev: it => `In the ${esc(it.lane)} lane &middot; ${esc(it.state)}${it.column ? ' (' + esc(it.column) + ')' : ''} &middot; ${spLabel(it.sp)}`}
 ];
 let attnShowAll = new Set();
+// Every finding says which swim lane and flow step the work is at (a task: its story's), so work in a lane
+// like BA Review stands out in every check
+const storyOf = it => it.level >= 3 && it.parent != null && byId.has(it.parent) ? byId.get(it.parent) : it;
+function laneNote(it, c) {
+  const st = storyOf(it), own = st === it, lane = laneOf(st), f = flowOf(st), k = stepOf(st), out = [];
+  if (lane && c.id !== 'uat') out.push(`<span class="lanetag">${own ? '' : 'Its story is in the '}${esc(lane)} lane</span>`);
+  if (f && k >= 0 && c.id !== 'stuck' && c.id !== 'skipped') out.push(`${own ? 'Step' : 'Story at step'} <b>${esc(stepVal(st))}</b> (${k + 1} of ${f.steps.length} in ${esc(f.name)})`);
+  return out.length ? `<div class="lanenote">${out.join(' &middot; ')}</div>` : '';
+}
 function attnFindings() {
   return ATTN.filter(c => !attnCfg.off[c.id]).map(c => {
     const skip = c.skip && c.skip();
@@ -2295,7 +2306,9 @@ function attnFindings() {
 function renderAttention() {
   const res = attnFindings(), n = new Set(res.flatMap(r => r.items.map(i => i.id))).size;
   $('#attnN').textContent = n; $('#attnN').hidden = !n;
-  $('#ainfo').innerHTML = `${n ? `<b>${n}</b> item${n === 1 ? '' : 's'} flagged` : 'Nothing flagged'} by ${res.length} of ${ATTN.length} checks &middot; data ${D.demo ? 'from the demo' : 'refreshed ' + esc(fmtWhen(D.runUtc))}` +
+  const byLane = new Map(); new Set(res.flatMap(r => r.items)).forEach(it => { const l = laneOf(storyOf(it)); if (l) byLane.set(l, (byLane.get(l) || 0) + 1); });
+  $('#ainfo').innerHTML = `${n ? `<b>${n}</b> item${n === 1 ? '' : 's'} flagged` : 'Nothing flagged'}` +
+    [...byLane].map(([l, k]) => ` &middot; <span class="lanetag">${k} in the ${esc(l)} lane</span>`).join('') + ` by ${res.length} of ${ATTN.length} checks &middot; data ${D.demo ? 'from the demo' : 'refreshed ' + esc(fmtWhen(D.runUtc))}` +
     (filtersOn() ? ' &middot; <b>filters apply</b>' : '') + (D.sprint ? ` &middot; ${curSprintLabel()}` : '');
   $('#a-menu').innerHTML = ATTN.map(c => `<label><input type="checkbox" data-c="${c.id}"${attnCfg.off[c.id] ? '' : ' checked'}> ${esc(c.name)}</label>` +
     (c.param ? `<label style="padding-left:26px" class="sub">after <input type="number" min="1" max="365" id="a-stale" value="${attnCfg.staleDays}"> days</label>` : '') +
@@ -2307,7 +2320,7 @@ function renderAttention() {
       <div class="sub why">${esc(why)}${c.limit ? ` <span class="lim">${esc(c.limit)}</span>` : ''}</div>` +
       (skip ? `<p class="sub">${esc(skip)}</p>` : !items.length ? '<p class="sub">Nothing found.</p>' :
       `<div class="tablewrap"><table><thead><tr><th>Item</th><th>Title</th><th>State</th><th>Assigned</th><th>Why, with evidence</th></tr></thead><tbody>${
-        rows.map(it => `<tr><td style="white-space:nowrap">${badge(it)} ${link(it)}</td><td class="t" style="max-width:340px" title="${esc(it.title)}">${esc(it.title)}</td><td>${pill(it)}</td><td>${it.assignee ? esc(it.assignee) : '<span class="sub">Unassigned</span>'}</td><td class="sub ev">${c.ev(it)}</td></tr>`).join('')
+        rows.map(it => `<tr><td style="white-space:nowrap">${badge(it)} ${link(it)}</td><td class="t" style="max-width:340px" title="${esc(it.title)}">${esc(it.title)}</td><td>${pill(it)}</td><td>${it.assignee ? esc(it.assignee) : '<span class="sub">Unassigned</span>'}</td><td class="sub ev">${c.ev(it)}${laneNote(it, c)}</td></tr>`).join('')
       }</tbody></table></div>${items.length > rows.length ? `<button class="btn" data-all="${c.id}" style="margin-top:6px">Show all ${items.length}</button>` : ''}`) + '</details>';
   }).join('') || '<p class="sub">All checks are turned off. Turn some on under Checks.</p>';
 }

@@ -354,7 +354,7 @@ The cache belongs to one scope. When the scope changes, the next run pulls every
 
 ## Latest updates
 
-**1.6.0 (preview)**: a **Settings** tab for status flows, swim lanes and story dates, a **Lane** filter, and four new Needs attention checks (stuck, skipped a step, past its end date, no UAT task in the UAT lane). It builds on **1.5.0 (preview)**: a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+**1.6.1 (preview)**: every Needs attention finding notes its swim lane (e.g. BA Review) and flow step. It builds on **1.6.0 (preview)**: a **Settings** tab for status flows, swim lanes and story dates, a **Lane** filter, and four new Needs attention checks (stuck, skipped a step, past its end date, no UAT task in the UAT lane). Earlier, **1.5.0 (preview)** added a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
 
 Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 

@@ -2,6 +2,12 @@
 
 Every release of ADO Work Map (PowerShell script and VS Code extension), newest first. Back to the [README](README.md).
 
+### 1.6.1 &mdash; preview: swim lanes in every check
+
+- **Needs attention:** every finding notes the swim lane (e.g. **BA Review lane**) and the step of its status flow; a task shows its story's lane and step.
+- **Waiting on unfinished predecessors:** a predecessor in a swim lane is tagged with it too.
+- **Summary line:** counts the flagged items in each lane (e.g. "4 in the BA Review lane").
+
 ### 1.6.0 &mdash; preview: status flows, swim lanes, settings
 
 - **Settings tab** in the Work Map:

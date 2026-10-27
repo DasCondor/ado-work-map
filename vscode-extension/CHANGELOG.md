@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1 (preview)
+
+- Needs attention: every finding notes its swim lane and flow step; the summary counts flagged items per lane
+
 ## 1.6.0 (preview)
 
 - Settings tab: status flows, swim lane / Start Date / End Date on or off, UAT lane; VS Code saves them and passes them to every refresh
