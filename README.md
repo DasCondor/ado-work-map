@@ -2,26 +2,43 @@
 
 # ADO Work Map
 
-**One PowerShell script. One HTML report. Your whole Azure DevOps project at a glance.**
+**See your whole Azure DevOps project at a glance, in one HTML file.**
 
-Epics, features, stories and tasks, every sprint, what changed, and how the work connects to your code,
-in an interactive page you can open in any browser.
+Epics, features, stories and tasks, every sprint, the board, what changed, and how the work connects to your code.
+An interactive report you open in any browser, from a PowerShell script, VS Code, or inside Azure DevOps itself.
 
 [![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](#requirements)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#requirements)
 [![No dependencies](https://img.shields.io/badge/modules-none-success)](#requirements)
-[![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-server-on-premises)
+[![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-Services%20%26%20Server-0078D7?logo=azuredevops&logoColor=white)](#azure-devops-extension)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/DasCondor/ado-work-map?label=release)](https://github.com/DasCondor/ado-work-map/releases/latest)
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
-### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Sprint planning demo](https://dascondor.github.io/ado-work-map/sprint-planning.html) &nbsp;&middot;&nbsp; [Get the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
+### [&#9654; Try the live demo](https://dascondor.github.io/ado-work-map/) &nbsp;&middot;&nbsp; [Sprint planning demo](https://dascondor.github.io/ado-work-map/sprint-planning.html) &nbsp;&middot;&nbsp; [Install the VS Code extension](https://marketplace.visualstudio.com/items?itemName=DasCondor.ado-work-map)
 
 <img src="docs/images/delivery-map.png" alt="Delivery map: epics on the left, the selected epic's features and stories with progress bars on the right" width="900">
 
-<sub>The live demo and all screenshots use the built-in demo data (<code>-Demo</code>), not a real project.</sub>
+<sub>Screenshots use the built-in demo data (<code>-Demo</code>), not a real project.</sub>
 
 </div>
+
+## A tour
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/needs-attention.png" alt="Needs attention: checks for unassigned, blocked and stranded work, each finding with its evidence and a link" width="100%"><br><b>Needs attention</b> &mdash; what to look at first, with the evidence and a link for each item.</td>
+<td width="50%"><img src="docs/images/board.png" alt="Board: open work by swim lane and board column, with a Next up panel" width="100%"><br><b>Board</b> &mdash; swim lanes and board columns, with what's next in the BA Review lane.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/sprints.png" alt="Sprint detail: sprint timeline, KPIs, work by person and a tree of the sprint's work" width="100%"><br><b>Sprints</b> &mdash; each sprint's numbers, work by person, and a tree of its work.</td>
+<td width="50%"><img src="docs/images/spider-web.png" alt="Spider web of work items, pull requests, branches, commits and repositories" width="100%"><br><b>Spider web</b> &mdash; work items connected to their PRs, commits, branches and repos.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/treemap.png" alt="Treemap: epic tiles containing feature tiles, coloured by percent done" width="100%"><br><b>Maps</b> &mdash; a treemap, a repo matrix and a commit heatmap.</td>
+<td width="50%"><img src="docs/images/settings.png" alt="Settings: planning data the maps use, status flows, board lanes and UAT settings" width="100%"><br><b>Settings</b> &mdash; your status flows, lanes and dates, so the checks know how your team works.</td>
+</tr>
+</table>
 
 ---
 
@@ -29,7 +46,7 @@ in an interactive page you can open in any browser.
 
 | | PowerShell script + HTML report | VS Code extension | Azure DevOps extension |
 |---|---|---|---|
-| Work Map report: Needs attention, delivery map, sprints, changes, maps, spider web | Supported | Supported | Supported |
+| Work Map report: Needs attention, delivery map, board, sprints, changes, maps, spider web, settings, experimental maps | Supported | Supported | Supported |
 | Access | Read-only (PAT or `az login`) | Read-only (PAT in VS Code secret storage) | Your own sign-in; writes only from Sprint planning's **Save plan** |
 | Connection check | `-Check` | **Check Connection** command | Not needed (uses your sign-in) |
 | Sprint planning | &mdash; | &mdash; | Preview: **Save plan** is off until you turn it on (not yet validated against a live organization); votes are entered on one shared screen |
@@ -124,13 +141,24 @@ The connections: work items, their parent/child, related and dependency links, a
 
 Open work laid out by swim lane (a row on the Azure DevOps board) and board column, in the order of your status flows. A **Next up** panel lists what comes next in the BA Review lane. Choose which lanes show, and their order, under Settings.
 
+<img src="docs/images/board.png" alt="Board: open work by swim lane and board column, with a Next up panel for the BA Review lane" width="900">
+
 ### Settings
 
 Set your **status flows** (the steps stories go through, by area path, iteration or swim lane), which planning data the report uses (**swim lane**, **Start Date**, **End Date**), and the UAT lane. Needs attention then finds stuck work, skipped steps, work past its end date and UAT-lane stories without a UAT task. Click **Export** and put `ado_work_map.settings.json` next to the script so every report uses them (VS Code saves them for you).
 
+<img src="docs/images/settings.png" alt="Settings: planning data the maps use, status flows, board lanes and UAT settings" width="900">
+
 ### Experimental
 
 Eight new maps to try, each with a short **How to read this map** box: **feature readiness** (is each open feature ready to plan?), **people load** (remaining hours per person per sprint), **dependencies** (are predecessors planned first?), **work aging** (what's been in progress longest), **forecast** (likely finish dates from the team's real pace), **sprint flow** (added, finished, carried over), **PR flow** (time to merge and waiting PRs per repo) and **cross-team** (which area paths wait on which). They may change; if one can't be drawn, the rest of the report still works.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/experimental-forecast.png" alt="Forecast: how likely each finish week is, with 50, 85 and 95 percent dates"><br><b>Forecast</b> &mdash; likely finish dates, from the team's real pace over the last 12 weeks.</td>
+<td width="50%"><img src="docs/images/experimental-dependencies.png" alt="Dependencies: predecessor links laid over the sprints, out of order in red"><br><b>Dependencies</b> &mdash; predecessors planned after the work that waits on them, in red.</td>
+</tr>
+</table>
 
 ## Quick start
 
