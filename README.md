@@ -120,6 +120,10 @@ The connections: work items, their parent/child, related and dependency links, a
 
 <img src="docs/images/spider-web.png" alt="Spider web: a graph of work items, pull requests, branches, commits and repositories" width="900">
 
+### Board
+
+Open work laid out by swim lane (a row on the Azure DevOps board) and board column, in the order of your status flows. A **Next up** panel lists what comes next in the BA Review lane. Choose which lanes show, and their order, under Settings.
+
 ### Settings
 
 Set your **status flows** (the steps stories go through, by area path, iteration or swim lane), which planning data the report uses (**swim lane**, **Start Date**, **End Date**), and the UAT lane. Needs attention then finds stuck work, skipped steps, work past its end date and UAT-lane stories without a UAT task. Click **Export** and put `ado_work_map.settings.json` next to the script so every report uses them (VS Code saves them for you).
@@ -354,7 +358,7 @@ The cache belongs to one scope. When the scope changes, the next run pulls every
 
 ## Latest updates
 
-**1.6.1 (preview)**: every Needs attention finding notes its swim lane (e.g. BA Review) and flow step. It builds on **1.6.0 (preview)**: a **Settings** tab for status flows, swim lanes and story dates, a **Lane** filter, and four new Needs attention checks (stuck, skipped a step, past its end date, no UAT task in the UAT lane). Earlier, **1.5.0 (preview)** added a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
+**1.7.0 (preview)**: a **Board** tab lays open work out by swim lane and board column, with a **Next up** panel for the BA Review lane, and you choose which lanes show, and in what order, under **Settings**. It builds on **1.6.1 (preview)**: every Needs attention finding notes its swim lane and flow step. Earlier, **1.6.0 (preview)** added a **Settings** tab for status flows, swim lanes and story dates, a **Lane** filter and four new Needs attention checks, and **1.5.0 (preview)** added a **Needs attention** tab, a connection check (`-Check`, or **Check Connection** in VS Code), plain-language errors and clearer labels.
 
 Full notes for this release and every earlier one: **[UPDATES.md](UPDATES.md)**.
 

@@ -37,6 +37,15 @@ try {
     const ba = res.blocked.items.find(i => i.lane === 'BA Review');
     ok(ba && /BA Review lane/.test(rowOf(ba.id).querySelector('.ev').textContent) && /Step .* of \d+ in BA Review/.test(rowOf(ba.id).querySelector('.ev').textContent), 'every check notes the BA Review lane and the flow step (e.g. waiting on predecessors)');
     ok(/in the BA Review lane/.test(document.getElementById('ainfo').textContent), 'the summary counts flagged items in each lane');
+    showTab('board'); renderBoard();
+    ok(/BA Review/.test(document.querySelector('#bbody').textContent) && document.querySelector('#bbody .bgrid tbody tr'), 'the board has a row for each swim lane');
+    ok(/Next up in the BA Review lane/.test(document.getElementById('bnext').textContent) && document.querySelector('#bnext tbody tr'), 'what is next in the BA Review lane is listed');
+    const nx = D.items.filter(i => i.level === 2 && isOpen(i) && pass(i) && (laneOf(i) || '').toLowerCase() === 'ba review').sort((a, b) => nextRank(a) - nextRank(b) || stepOf(b) - stepOf(a) || a.id - b.id);
+    ok(nx.length > 0 && document.querySelector('#bnext tbody tr').textContent.match(/#\d+/)[0] === '#' + nx[0].id, 'the first item listed is the first one up');
+    const keepSet = SET; SET = normSet(Object.assign(JSON.parse(JSON.stringify(keepSet)), {board: {lanes: ['BA Review', 'Nowhere'], noLane: false}})); renderBoard();
+    ok(document.querySelectorAll('#bbody .bgrid tbody tr').length === 2 && /Nowhere/.test(document.querySelector('#bbody').textContent), 'the lanes set in Settings show in that order, even when empty, and other lanes are left off');
+    SET = keepSet; renderBoard();
+    showTab('attention');
     showTab('settings'); ok(document.querySelectorAll('#settings .flowc').length === 3, 'the Settings tab lists the flows');
     document.querySelector('#settings [data-use="lane"]').click(); document.querySelector('#settings [data-act="save"]').click();
     ok(!res.uat.c.skip() === false && document.getElementById('f-lane').hidden, 'turning Swim lane off hides the lane filter and skips the lane check');

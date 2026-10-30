@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0 (preview)
+
+- Board tab: swim lanes as rows, board columns as columns, with a Next up panel for the BA Review lane
+- Board lanes set under Settings: which lanes show, and their order
+
 ## 1.6.1 (preview)
 
 - Needs attention: every finding notes its swim lane and flow step; the summary counts flagged items per lane

@@ -1485,6 +1485,10 @@ nav .ncount{margin-left:6px;background:var(--accent);color:#fff;border-radius:9p
 #lab .hc{text-align:right;font-variant-numeric:tabular-nums}
 .lanetag{display:inline-block;border:1px dashed var(--accent);color:var(--text);border-radius:9px;padding:0 7px;font-size:11px;background:color-mix(in srgb,var(--accent) 10%,var(--panel));white-space:nowrap}
 .lanenote{margin-top:3px}
+.bcard{border:1px solid var(--line);border-left:4px solid var(--c,var(--accent));border-radius:4px;padding:4px 7px;margin-bottom:6px;background:var(--panel);font-size:12.5px;line-height:1.35}
+.bgrid td{min-width:180px;vertical-align:top;background:var(--bg)} .bgrid th{min-width:150px}
+.bgrid td:first-child{background:var(--panel)}
+.next{margin-bottom:12px} .next h3{margin-bottom:2px}
 .pills{display:inline-flex;gap:4px;flex-wrap:wrap;justify-self:start} .pill.lanep{color:var(--muted);border-style:dashed}
 #settings .setc{margin-bottom:12px;max-width:1100px;padding:10px 14px} #settings .setc h3{margin:2px 0 4px}
 #settings .frow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0;font-size:13px}
@@ -1545,6 +1549,7 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
 <nav>
   <button data-tab="attention">Needs attention<span class="ncount" id="attnN" hidden></span></button>
   <button class="on" data-tab="map">Delivery map</button>
+  <button data-tab="board">Board</button>
   <button data-tab="sprints">Sprints</button>
   <button data-tab="changes">Changes</button>
   <button data-tab="maps">Maps</button>
@@ -1673,6 +1678,12 @@ tr[data-who]{cursor:pointer} tr[data-who]:hover td{background:var(--hover)} tr[d
   <div id="xbody"><div class="card xfail"><b>The experimental maps didn't load.</b> <span class="sub">The rest of the report works as usual.</span></div></div>
 </section>
 
+<section id="board">
+  <div class="toolbar"><span class="sub" id="binfo"></span></div>
+  <div id="bnext"></div>
+  <div id="bbody"></div>
+</section>
+
 <section id="settings">
   <div id="setbody"></div>
 </section>
@@ -1753,13 +1764,14 @@ const spOfPath = path => { let p = String(path || '').toLowerCase();   // sprint
 const SET_DEF = {dates: {start: 'Microsoft.VSTS.Scheduling.StartDate', end: 'Microsoft.VSTS.Scheduling.TargetDate'}, uat: {lane: 'BA Review', title: 'UAT testing'}, stuckDays: 10};
 function normSet(x) {
   x = x && typeof x === 'object' ? x : {};
-  const str = (v, d) => typeof v === 'string' && v.trim() ? v.trim() : d, use = x.use || {}, dates = x.dates || {}, uat = x.uat || {};
+  const str = (v, d) => typeof v === 'string' && v.trim() ? v.trim() : d, use = x.use || {}, dates = x.dates || {}, uat = x.uat || {}, bd = x.board || {};
   return {
     use: {start: use.start !== false, end: use.end !== false, lane: use.lane !== false},
     dates: {start: str(dates.start, SET_DEF.dates.start), end: str(dates.end, SET_DEF.dates.end)},
     flows: (Array.isArray(x.flows) ? x.flows : []).filter(f => f && typeof f === 'object').slice(0, 50).map(f => ({name: str(f.name, 'Flow'), area: str(f.area, ''), iteration: str(f.iteration, ''), lane: str(f.lane, ''),
       steps: (Array.isArray(f.steps) ? f.steps : []).map(v => String(v).trim()).filter(Boolean).slice(0, 30)})).filter(f => f.steps.length),
     uat: {lane: str(uat.lane, SET_DEF.uat.lane), title: str(uat.title, SET_DEF.uat.title)},
+    board: {lanes: (Array.isArray(bd.lanes) ? bd.lanes : []).map(v => String(v).trim()).filter(Boolean).slice(0, 30), noLane: bd.noLane !== false},
     stuckDays: Math.max(1, Math.min(365, Math.round(+x.stuckDays) || SET_DEF.stuckDays))
   };
 }
@@ -1940,6 +1952,7 @@ function showTab(t) {
   if (t === 'maps') safe(renderMaps, $('#mbody'), 'This map');
   if (t === 'lab' && window.renderLab) safe(window.renderLab, $('#xbody'), 'The experimental maps');
   if (t === 'settings') safe(renderSettings, $('#setbody'), 'Settings');
+  if (t === 'board') safe(renderBoard, $('#bbody'), 'The board');
   if (t === 'sprints' && !renderSprints.scrolled) renderSprints();
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -2332,6 +2345,51 @@ $('#a-menu').addEventListener('change', e => {
 });
 $('#abody').addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (b) { attnShowAll.add(b.dataset.all); renderAttention(); } });
 
+// ---------- Board: swim lanes x board columns, laid out the way the Azure DevOps board shows them ----------
+const BOARD_HELP = {q: 'Where is each open story on the board, by swim lane and by column?',
+  read: 'Each row is a swim lane (a row on the Azure DevOps board). Each column is a board column, in the order of your status flows. Each card is an open story, technical story or bug.',
+  click: 'Click an id to open it in Azure DevOps. The filter bar narrows the board.',
+  limits: 'Shows the board as it was at the last refresh. Column order comes from the status flows in Settings; any other column in the data goes after them. Which lanes show, and their order, is set under Settings.'};
+const clip = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '...' : s;
+const btable = (head, rows) => `<div class="tablewrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+const bcard = it => `<div class="bcard" style="--c:${C[it.kind] || '#888'}">${link(it)} <span title="${esc(it.title)}">${esc(clip(it.title, 44))}</span>${it.assignee ? `<div class="sub">${esc(it.assignee)}</div>` : ''}</div>`;
+// The board column is the one Azure DevOps shows the item in; the state stands in when there isn't one
+const boardColOf = it => it.column || stepVal(it);
+function boardCols(items) {
+  const cols = []; const add = v => { if (v && !cols.some(c => c.toLowerCase() === String(v).toLowerCase())) cols.push(v); };
+  SET.flows.forEach(f => f.steps.forEach(add));
+  items.forEach(it => add(boardColOf(it)));
+  return cols;
+}
+// "Next up" order: sprints that have ended, then the current sprint, later sprints, then the backlog
+const nextRank = it => it.sp < 0 ? 999 : curIdx < 0 ? 2 + it.sp : it.sp < curIdx ? 0 : it.sp === curIdx ? 1 : 2 + it.sp;
+const nextWhy = it => { const r = nextRank(it); return r === 0 ? 'Sprint has ended' : r === 1 ? `${curWord} sprint` : r === 999 ? 'Backlog' : `Planned for ${SPR[it.sp].name}`; };
+function renderBoard() {
+  const items = D.items.filter(it => it.level === 2 && isOpen(it) && pass(it));
+  // Rows: the lanes set under Settings, in that order (even when empty), else every lane in the data
+  const rowsDef = !useLane() ? [{name: '', key: ''}] : SET.board.lanes.length
+    ? SET.board.lanes.map(n => ({name: n, key: n.toLowerCase()})).concat(SET.board.noLane ? [{name: '', key: ''}] : [])
+    : [...new Set(items.map(it => laneOf(it) || ''))].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).map(n => ({name: n, key: n.toLowerCase()}));
+  const inRow = (it, r) => (laneOf(it) || '').toLowerCase() === r.key;
+  const cols = boardCols(items), uat = SET.uat.lane.toLowerCase();
+  const colOf = it => cols.findIndex(c => c.toLowerCase() === String(boardColOf(it)).toLowerCase());
+  const off = items.filter(it => !rowsDef.some(r => inRow(it, r))).length;
+  $('#binfo').innerHTML = `${items.length} open &middot; ${rowsDef.length} lane${rowsDef.length === 1 ? '' : 's'}` + (useLane() ? '' : ' &middot; swim lanes are off in Settings, so every item is in one row')
+    + (off ? ` &middot; ${off} in lanes not on the board (change under Settings)` : '');
+  $('#bbody').innerHTML = explainer('board', BOARD_HELP) + (items.length
+    ? `<div class="card smap"><table class="bgrid"><thead><tr><th>Swim lane</th>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rowsDef.map(r => `<tr><td style="white-space:nowrap"><b>${r.name ? esc(r.name) : 'No lane'}</b>${r.key && r.key === uat ? ' <span class="lanetag">UAT</span>' : ''}</td>${cols.map((c, k) => {
+        const xs = items.filter(it => inRow(it, r) && colOf(it) === k).sort((a, b) => a.id - b.id);
+        return `<td>${xs.slice(0, 20).map(bcard).join('')}${xs.length > 20 ? `<div class="sub">+${xs.length - 20} more</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`
+    : '<p class="sub">No open stories, technical stories or bugs match the filters.</p>');
+  // What is next in the UAT lane (BA Review by default)
+  const next = items.filter(it => (laneOf(it) || '').toLowerCase() === uat).sort((a, b) => nextRank(a) - nextRank(b) || stepOf(b) - stepOf(a) || a.id - b.id);
+  $('#bnext').innerHTML = !SET.use.lane ? '' : !next.length ? `<p class="sub">Nothing is in the ${esc(SET.uat.lane)} lane right now.</p>` :
+    `<div class="card smap next"><h3>Next up in the ${esc(SET.uat.lane)} lane</h3>
+    <p class="sub">${next.length} open ${next.length === 1 ? 'story' : 'stories'}. Sprints that have ended come first, then the ${curWord} sprint, later sprints and the backlog. Within a sprint, the story furthest along its flow comes first.</p>
+    ${btable(['Item', 'Title', 'Column', 'Sprint', 'Owner', 'UAT task', 'Why'], next.slice(0, 10).map(it => `<tr><td style="white-space:nowrap">${badge(it)} ${link(it)}</td><td class="t" style="max-width:340px" title="${esc(it.title)}">${esc(it.title)}</td><td>${esc(boardColOf(it))}</td><td>${it.sp >= 0 ? esc(SPR[it.sp].name) : '<span class="sub">Backlog</span>'}</td><td>${it.assignee ? esc(it.assignee) : '<span class="sub">Unassigned</span>'}</td><td>${hasUat(it) ? 'Yes' : '<span class="lanetag">No</span>'}</td><td class="sub">${nextWhy(it)}</td></tr>`))}
+    ${next.length > 10 ? `<p class="sub">+ ${next.length - 10} more in the board above.</p>` : ''}</div>`;
+}
+
 // ---------- Settings ----------
 const EXAMPLE_FLOWS = [
   {name: 'BA Review', area: '', iteration: '', lane: 'BA Review', steps: ['New', 'Ready', 'In Progress', 'Review', 'Testing (UAT)', 'Resolved', 'Closed']},
@@ -2365,6 +2423,10 @@ function renderSettings() {
       <div class="frow">Steps <input type="text" class="wide" data-f="steps" value="${esc(f.steps.join(' > '))}" placeholder="New > Ready > In Progress > Review > Resolved > Closed"></div></div>`).join('')}
     <div class="frow"><button class="btn" data-act="add">Add a flow</button>${s.flows.length ? '' : '<button class="btn" data-act="examples">Start from the example flows</button>'}<span class="sub">${n(none, 'story')} in this data follow${none === 1 ? 's' : ''} no flow</span></div>
     ${known.length ? `<p class="sub">Board columns and states in this data: ${known.map(esc).join(', ')}</p>` : ''}</div>
+  <div class="card setc"><h3>Board lanes</h3>
+    <p class="sub">The swim lanes the Board shows, top to bottom. Lanes listed here show even when empty; lanes not listed are left off. Leave blank to show every lane in the data.</p>
+    <div class="frow">Lanes, in order <input type="text" class="wide" data-board="lanes" list="dl-lane" value="${esc(s.board.lanes.join(' > '))}" placeholder="BA Review > In Development > Backlog"></div>
+    <label class="frow"><input type="checkbox" data-board="noLane"${s.board.noLane ? ' checked' : ''}> <b>No lane</b> <span class="sub">show items that aren't in a lane (only when lanes are listed above)</span></label></div>
   <div class="card setc"><h3>UAT and stuck work</h3>
     <div class="frow">Stories in the swim lane <input type="text" data-uat="lane" list="dl-lane" value="${esc(s.uat.lane)}" size="18"> need a task with <input type="text" data-uat="title" value="${esc(s.uat.title)}" size="18"> (or "UAT") in its title.</div>
     <div class="frow">A story is stuck after <input type="number" min="1" max="365" data-stuck value="${s.stuckDays}" style="width:70px"> days in one step.</div></div>
@@ -2388,6 +2450,7 @@ $('#settings').addEventListener('input', e => {
   else if (t.dataset.uat) s.uat[t.dataset.uat] = t.value;
   else if ('stuck' in t.dataset) s.stuckDays = +t.value;
   else if (t.dataset.f) { const f = s.flows[+t.closest('.flowc').dataset.i]; f[t.dataset.f] = t.dataset.f === 'steps' ? t.value.split(/\s*(?:>|,)\s*/).map(x => x.trim()).filter(Boolean) : t.value; }
+  else if (t.dataset.board) { if (t.dataset.board === 'lanes') s.board.lanes = t.value.split(/\s*(?:>|,)\s*/).map(x => x.trim()).filter(Boolean); else s.board.noLane = t.checked; }
   else return;
   $('#set-msg').textContent = 'Not saved yet';
 });
@@ -2844,6 +2907,7 @@ function renderAll() {
   [renderKpis, renderEpicList, renderRight, renderSprints, renderChanges, renderAttention].forEach(f => safe(f));
   if (activeTab === 'maps') safe(renderMaps, $('#mbody'), 'This map');
   if (activeTab === 'lab' && window.renderLab) safe(window.renderLab, $('#xbody'), 'The experimental maps');
+  if (activeTab === 'board') safe(renderBoard, $('#bbody'), 'The board');
   if (window.graphApi) safe(window.graphApi.redraw);
 }
 // The maps lay themselves out for the page width: redraw them when it changes

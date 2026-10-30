@@ -2,6 +2,12 @@
 
 Every release of ADO Work Map (PowerShell script and VS Code extension), newest first. Back to the [README](README.md).
 
+### 1.7.0 &mdash; preview: board with swim lanes
+
+- **Board tab:** open work laid out with swim lanes as rows and board columns as columns, in the order of your status flows. Filters apply.
+- **Next up in the BA Review lane:** the open stories in that lane, in order: sprints that have ended, the current sprint, later sprints, then the backlog. Within a sprint, the story furthest along its flow comes first. Each shows whether it has a UAT task.
+- **Board lanes:** choose which swim lanes show, and in what order, under Settings > Board lanes. Listed lanes show even when empty; a checkbox controls items with no lane.
+
 ### 1.6.1 &mdash; preview: swim lanes in every check
 
 - **Needs attention:** every finding notes the swim lane (e.g. **BA Review lane**) and the step of its status flow; a task shows its story's lane and step.
