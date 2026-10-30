@@ -49,6 +49,13 @@ body{overflow:hidden}
 .adonav .sub-ni a.on{background:var(--sel);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
 .adonav .grow{flex:1}
 .hub{overflow:auto;background:var(--bg)}
+.real #splenlbl,.real #simulate,.real #simfist{display:none}
+.acx{font-size:13.5px;line-height:1.5} .acx ul,.acx ol{padding-left:22px;margin:4px 0}
+.savebox{position:fixed;inset:0;z-index:45;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:24px}
+.savebox[hidden]{display:none}
+.savebox .in{background:var(--panel);color:var(--text);border-radius:6px;max-width:560px;width:100%;padding:18px 22px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.savebox ul{margin:8px 0 12px;padding-left:20px} .savebox .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.savebox .err{color:var(--bad);font-size:12.5px;max-height:200px;overflow:auto}
 .embedded .notice,.embedded .adoh,.embedded .adonav{display:none}
 .embedded .shell,.embedded .shell.navmin{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .adoh button.hicon{background:none;border:0;font:inherit;cursor:pointer}
@@ -82,7 +89,7 @@ select,input{background:var(--panel);color:var(--text);border:1px solid var(--li
 .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;background:var(--c,#605e5c);position:relative;flex:0 0 auto}
 .av.sm{width:22px;height:22px;font-size:9px}
 .av .ok{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;background:var(--ok);color:#fff;font-size:9px;display:grid;place-items:center;border:2px solid var(--panel)}
-main{padding:0 20px 30px;max-width:1700px;margin:0 auto}
+main{padding:0 20px 30px}
 section.view{display:none} section.view.on{display:block}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px}
@@ -295,7 +302,7 @@ section.view{display:none} section.view.on{display:block}
 <div class="shell">
 <div class="notice"><b>Live demo</b><span>Sprint planning &middot; a preview for the ADO Work Map extension for Azure DevOps</span><span class="sep">&middot;</span>
   <span>Sample data, runs only in your browser &mdash; nothing is sent anywhere</span><span class="grow"></span>
-  <a href="index.html">Work map demo</a><a href="https://github.com/DasCondor/ado-work-map" target="_blank" rel="noopener noreferrer">GitHub</a>
+  <a href="index.html">Work map demo</a><a href="https://github.com/DasCondor/ado-work-map-extension" target="_blank" rel="noopener noreferrer">GitHub</a>
   <span class="sub">Not affiliated with Microsoft</span></div>
 <header class="adoh">
   <span class="brand"><svg class="mark"><use href="#i-mark"/></svg>Azure DevOps <span class="sub" style="font-weight:400">(demo)</span></span>
@@ -327,7 +334,8 @@ section.view{display:none} section.view.on{display:block}
   <div><h1 id="title">Sprint planning</h1><div class="sub" id="meta"></div></div>
   <span class="grow"></span>
   <label class="sub">Sprint <select id="sprint"></select></label>
-  <label class="sub" title="Demo only: stretch this sprint to see longer sprints. Later sprints move along with it.">Length <select id="splen"><option value="1">1 week</option><option value="2">2 weeks</option><option value="3">3 weeks</option><option value="4">4 weeks</option><option value="5">5 weeks</option></select></label>
+  <label class="sub" id="splenlbl" title="Demo only: stretch this sprint to see longer sprints. Later sprints move along with it.">Length <select id="splen"><option value="1">1 week</option><option value="2">2 weeks</option><option value="3">3 weeks</option><option value="4">4 weeks</option><option value="5">5 weeks</option></select></label>
+  <button class="btn primary" id="saveplan" hidden title="Write the plan's changes to Azure DevOps">Save plan</button>
   <button class="btn" id="export">Export changes (CSV)</button>
   <button class="btn" id="reset">Start over</button>
   <label class="sub">Theme <select id="theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
@@ -337,14 +345,24 @@ section.view{display:none} section.view.on{display:block}
   <span class="grow"></span>
   <div class="team" id="team" title="Who's ready for the next step - click someone to tick them"></div>
   <div class="timer" id="timer" title="Time left for this step">--:--</div>
+  <select id="tmode" title="This step's timer: count up (stopwatch) or count down from a set time" style="font-size:12px"><option value="stopwatch">Stopwatch</option><option value="timer">Timer</option></select>
+  <input type="number" id="tmin" min="1" max="180" title="Minutes for this step's timer" style="width:58px">
+  <button class="btn" id="msettings">Meeting settings</button>
   <button class="btn" id="tgo">Start</button>
   <button class="btn primary" id="next">Next step &rsaquo;</button>
+</div>
+<div class="card" id="mset" hidden style="margin:8px 0;max-width:760px">
+  <b>Meeting settings</b> <span class="sub">for this team</span>
+  <label style="display:block;margin:8px 0"><input type="checkbox" id="pset-poker"> <b>Planning poker</b> <span class="sub">each person votes on a story's estimate, on one shared screen</span></label>
+  <label style="display:block;margin:8px 0"><input type="checkbox" id="pset-fist"> <b>Confidence vote</b> <span class="sub">fist of five on the Commit page, before the plan is committed</span></label>
+  <p class="sub" style="margin:0">Both are off by default. With planning poker off, enter each story's points directly on the Estimate page.</p>
 </div>
 <main>
   <div class="kpis" id="kpis"></div>
 
   <section class="view" id="v-capacity">
     <div class="intro"><span class="big">&#128197;</span><div><h2>1. Capacity check-in</h2><div class="sub">Everyone sets their hours per day and any time off in this sprint &mdash; a full day, half a day, or a few hours. Team-wide days off (holidays) apply to everyone. Capacity is what's left.</div></div></div>
+    <div class="card" id="capwarn" hidden style="border-color:var(--bad);color:var(--bad);margin-bottom:12px"></div>
     <div class="card capgrid" id="capgrid"></div>
     <div class="legend"><span style="--c:var(--accent)">Assigned work (task hours)</span><span style="--c:var(--stripe)">Estimated from points (no tasks yet)</span><span style="--c:var(--text)">Capacity line</span></div>
     <div class="card" id="cal1" style="margin-top:12px"></div>
@@ -356,7 +374,7 @@ section.view{display:none} section.view.on{display:block}
   </section>
 
   <section class="view" id="v-poker">
-    <div class="intro"><span class="big">&#127183;</span><div><h2>3. Planning poker</h2><div class="sub">On one shared screen: each person picks a card (or tells the facilitator), then reveal. Votes aren't synced between computers. Close votes become the estimate; far-apart votes mean talk it through and vote again. Items without an estimate come first.</div></div></div>
+    <div class="intro"><span class="big">&#127183;</span><div><h2 id="pokerh">3. Planning poker</h2><div class="sub" id="pokersub">On one shared screen: each person picks a card (or tells the facilitator), then reveal. Votes aren't synced between computers. Close votes become the estimate; far-apart votes mean talk it through and vote again. Items without an estimate come first.</div></div></div>
     <div class="poker">
       <div class="card" id="pokerbody"></div>
       <div class="card"><h3>Up next</h3><div class="list" id="queue" style="max-height:520px"></div></div>
@@ -383,22 +401,29 @@ section.view{display:none} section.view.on{display:block}
   </section>
 
   <section class="view" id="v-commit">
-    <div class="intro"><span class="big">&#9995;</span><div><h2>5. Confidence vote</h2><div class="sub">Fist of five, entered on this screen: how confident is each of you that the team can finish this plan? 1 = no way, 5 = easy. An average of 3.5 or more and you're committed.</div></div></div>
+    <div class="intro"><span class="big">&#9995;</span><div><h2 id="commith">5. Confidence vote</h2><div class="sub" id="commitsub">Fist of five, entered on this screen: how confident is each of you that the team can finish this plan? 1 = no way, 5 = easy. An average of 3.5 or more and you're committed.</div></div></div>
     <div class="poker"><div class="card fists" id="fists"></div><div class="card" id="verdict"></div></div>
     <div class="card" id="cal5" style="margin-top:12px"></div>
   </section>
 </main>
 </div></div>
 <div class="modal" id="modal" hidden><div class="mbox" id="mbox" role="dialog" aria-modal="true"></div></div>
+<div class="savebox" id="savebox" hidden><div class="in" id="saveinner" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
 <canvas id="confetti"></canvas>
 <script>
 const D = __DATA__;
+// REAL: running as the Sprint planning hub inside Azure DevOps (live data, Save plan). Otherwise the live demo.
+const REAL = !!D.real, PAPI = window.PLANNING_API || null;
+if (REAL) document.documentElement.classList.add('real');
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-const KEY = 'adomap.planning2.' + D.project;
+const KEY = 'adomap.planning2.' + D.project + (D.teamId ? '.' + D.teamId : '');
 const load = (k, d) => { try { const v = localStorage.getItem(KEY + '.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(KEY + '.' + k, JSON.stringify(v)); } catch (e) {} };
+// Meeting settings: votes are off by default; each step's timer is a stopwatch unless the team sets a countdown
+let PSET = Object.assign({poker: false, fist: false, timers: {}}, (REAL ? D.planning : load('planset', {})) || {});
+const savePlanSettings = () => { save('planset', PSET); if (REAL && window.PLANNING_API && window.PLANNING_API.savePlanning) window.PLANNING_API.savePlanning(PSET).catch(e => toast('Not saved: ' + (e && e.message || e))); };
 const toast = msg => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); };
 const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, {month: 'short', day: 'numeric', timeZone: 'UTC'}) : '';
 const h1 = n => (Math.round(n * 10) / 10).toLocaleString();
@@ -413,6 +438,7 @@ const isStory = it => ['User Story', 'Product Backlog Item', 'Requirement', 'Bug
 
 // Extra sample backlog items (with tasks) so the demo has plenty to plan; seeded so they're the same every time
 (function addSamples() {
+  if (REAL) return;
   let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const features = D.items.filter(i => i.type === 'Feature');
   const people = [...new Set(D.items.map(i => i.assignee).filter(Boolean))];
@@ -451,8 +477,9 @@ const DAY = 864e5, isoDay = t => new Date(t).toISOString().slice(0, 10) + 'T00:0
 const weeksOf = i => Math.max(1, Math.round((Date.parse(ORIG[i].finish) - Date.parse(ORIG[i].start) + 3 * DAY) / (7 * DAY)));
 // Example sprint for the demo: Oct 26 - Nov 20, 2026 (4 weeks)
 const EX_START = '2026-10-26', EX_WEEKS = 4;
-const EX = (() => { const i = ORIG.findIndex(o => String(o.start).slice(0, 10) === EX_START); return i >= 0 ? i : SPR.findIndex(s => s.timeFrame === 'future'); })();
+const EX = REAL ? -1 : (() => { const i = ORIG.findIndex(o => String(o.start).slice(0, 10) === EX_START); return i >= 0 ? i : SPR.findIndex(s => s.timeFrame === 'future'); })();
 function applyLengths() {
+  if (REAL) return;   // real sprints keep their own dates
   const L = load('len', null) || (EX >= 0 ? {[EX]: EX_WEEKS} : {});
   let shift = 0;
   SPR.forEach((s, i) => {
@@ -463,7 +490,10 @@ function applyLengths() {
 }
 applyLengths();
 const curIdx = SPR.findIndex(s => s.timeFrame === 'current');
-const people = [...new Set(D.items.filter(i => i.type !== 'Epic' && i.type !== 'Feature').map(i => i.assignee).filter(Boolean))].sort();
+const people = REAL
+  // team members, plus anyone else who owns work in the current or upcoming sprints
+  ? [...new Set(D.people.map(p => p.name).concat(D.items.filter(i => i.assignee && (i.sp < 0 || i.sp >= SPR.findIndex(s => s.timeFrame !== 'past')) && i.bucket !== 'done').map(i => i.assignee)))].sort()
+  : [...new Set(D.items.filter(i => i.type !== 'Epic' && i.type !== 'Feature').map(i => i.assignee).filter(Boolean))].sort();
 const needs = new Map();   // "to" needs "from" first (successor links)
 D.graph.edges.filter(e => e.kind === 'depends').forEach(e => { const to = +e.to.slice(1); if (!needs.has(to)) needs.set(to, []); needs.get(to).push(+e.from.slice(1)); });
 const tasksOf = st => (st.children || []).map(id => byId.get(id)).filter(t => t && t.type === 'Task' && t.bucket !== 'done' && t.bucket !== 'removed');
@@ -473,7 +503,7 @@ let target = load('target', SPR.findIndex(s => s.timeFrame === 'future'));
 if (!(target >= 0 && target < SPR.length)) target = Math.max(0, curIdx);
 let P = load('plan', {});      // story id -> {sp, who}
 let E = load('est', {});       // story id -> points agreed in poker
-let C = load('cap', null) || exampleCap();
+let C = load('cap', null) || (REAL ? JSON.parse(JSON.stringify(D.capacity || {})) : exampleCap());
 function exampleCap() {
   if (EX < 0 || String(SPR[EX].start).slice(0, 10) !== EX_START) return {};
   const [a, b, c, d, e] = people;   // Avery Chen, Jordan Patel, Riley Okafor, Sam Rivera, Taylor Brooks in the demo
@@ -500,6 +530,11 @@ function addTaskItem(t) {
 NT.forEach(addTaskItem);
 const planned = it => P[it.id] || {sp: it.sp, who: it.assignee || ''};
 const pts = it => E[it.id] != null ? E[it.id] : it.points;
+// Stories in the UAT swim lane (set in the Work Map's Settings) need a UAT testing task; planning can draft it
+const UAT = (() => { const s = D.settings || {}; if (s.use && s.use.lane === false) return null;
+  return {lane: String(s.uat && s.uat.lane || 'BA Review'), title: String(s.uat && s.uat.title || 'UAT testing')}; })();
+const needsUat = st => !!UAT && !!st.lane && st.lane.toLowerCase() === UAT.lane.toLowerCase() && st.bucket !== 'done' &&
+  !tasksOf(st).some(t => t.title.toLowerCase().includes(UAT.title.toLowerCase()) || /\buat\b/i.test(t.title));
 
 // ---------- capacity: hours per day minus time off, over the sprint's working days ----------
 const OFF =[['', 'Working', '\u00b7'], ['1h', '1 hour off', '1h'], ['2h', '2 hours off', '2h'], ['3h', '3 hours off', '3h'], ['half', 'Half day off', '\u00bd'], ['5h', '5 hours off', '5h'], ['full', 'Full day off', 'Off']];
@@ -508,7 +543,7 @@ const days = s => { const out = []; if (!s.start || !s.finish) return out;
   for (let d = Date.parse(s.start.slice(0, 10) + 'T00:00:00Z'); d <= Date.parse(s.finish.slice(0, 10) + 'T00:00:00Z'); d += 864e5) { const w = new Date(d).getUTCDay(); if (w && w < 6) out.push(new Date(d).toISOString().slice(0, 10)); }
   return out; };
 const capOf = (sp = target) => (C[sp] = C[sp] || {hpd: {}, off: {}, team: {}});
-const hpdOf = (who, sp = target) => { const v = capOf(sp).hpd[who]; return v == null ? 6 : v; };
+const hpdOf = (who, sp = target) => { const v = capOf(sp).hpd[who]; return v == null ? (REAL ? 0 : 6) : v; };
 function capacity(who, sp = target) {
   const c = capOf(sp), hpd = hpdOf(who, sp), ds = days(SPR[sp]);
   let off = 0; ds.forEach(d => { off += Math.max(offHours((c.off[who] || {})[d], hpd), offHours(c.team[d], hpd)); });
@@ -548,6 +583,7 @@ function issuesOf(it) {
   const out = [];
   if (pts(it) == null) out.push(['warn', 'No estimate']);
   if (!planned(it).who) out.push(['warn', 'Unassigned']);
+  if (needsUat(it)) out.push(['warn', `${it.lane}: no UAT task`]);
   for (const dep of needs.get(it.id) || []) { const d = byId.get(dep); if (!d || d.bucket === 'done') continue;
     const s = planned(d).sp; if (s < 0 || s > target) out.push(['bad', `Needs #${dep} first`]); else if (s === target) out.push(['warn', `Needs #${dep} (same sprint)`]); }
   return out;
@@ -560,7 +596,7 @@ function card(it, inPlan) {
     <div class="meta"><span class="pts${pts(it) == null ? ' none' : ''}">${pts(it) == null ? '?' : pts(it)}</span>
       <span>${hrs ? h1(hrs) + ' h in ' + tasksOf(it).length + ' task' + (tasksOf(it).length > 1 ? 's' : '') : 'no tasks yet'}</span>
       ${inPlan ? '' : `<span>${esc(planned(it).who || 'Unassigned')}</span>`}${f ? `<span>${esc(f.title.slice(0, 26))}</span>` : ''}
-      ${E[it.id] != null ? '<span class="tag new">estimated</span>' : ''}${it.sample ? '<span class="tag new">sample</span>' : ''}
+      ${it.lane ? `<span class="tag">${esc(it.lane)}</span>` : ''}${E[it.id] != null ? '<span class="tag new">estimated</span>' : ''}${it.sample ? '<span class="tag new">sample</span>' : ''}
       ${iss.map(([k, t]) => `<span class="tag ${k}">${esc(t)}</span>`).join('')}</div></div>`;
 }
 function setPlan(id, sp, who) {
@@ -571,16 +607,27 @@ function setPlan(id, sp, who) {
 
 // ---------- meeting: agenda, timer, team readiness ----------
 const STEPS = [['capacity', 'Capacity', 5], ['carry', 'Carry over', 5], ['poker', 'Estimate', 15], ['board', 'Fill the sprint', 15], ['commit', 'Commit', 5]];
-let timer = {left: STEPS[S.step][2] * 60, run: false, h: null};
+const stepTimer = i => { const t = (PSET.timers || {})[STEPS[i][0]] || {};
+  return {mode: t.mode === 'timer' ? 'timer' : 'stopwatch', min: Math.max(1, Math.min(180, +t.min || STEPS[i][2]))}; };
+let timer = {sec: 0, up: true, run: false, h: null};
+function resetTimer() { clearInterval(timer.h); const t = stepTimer(S.step); timer = {sec: t.mode === 'timer' ? t.min * 60 : 0, up: t.mode === 'stopwatch', run: false, h: null}; }
+resetTimer();
 function goStep(i) {
   S.step = Math.max(0, Math.min(STEPS.length - 1, i)); S.ready = {}; save('meeting', S);
-  timer.left = STEPS[S.step][2] * 60; tick(); render();
+  resetTimer(); tick(); render();
 }
-function tick() { const m = Math.floor(Math.abs(timer.left) / 60), s = Math.abs(timer.left) % 60;
-  $('#timer').textContent = (timer.left < 0 ? '+' : '') + m + ':' + String(s).padStart(2, '0'); $('#timer').classList.toggle('late', timer.left < 0);
-  $('#tgo').textContent = timer.run ? 'Pause' : 'Start'; }
-$('#tgo').onclick = () => { timer.run = !timer.run; clearInterval(timer.h); if (timer.run) timer.h = setInterval(() => { timer.left--; tick(); if (timer.left === 0) toast(`Time's up for ${STEPS[S.step][1]} - wrap up or take a minute more`); }, 1000); tick(); };
+function tick() { const a = Math.abs(timer.sec), m = Math.floor(a / 60), s = a % 60, late = !timer.up && timer.sec < 0, t = stepTimer(S.step);
+  $('#timer').textContent = (late ? '+' : '') + m + ':' + String(s).padStart(2, '0'); $('#timer').classList.toggle('late', late);
+  $('#timer').title = timer.up ? 'Time spent on this step' : 'Time left for this step';
+  $('#tgo').textContent = timer.run ? 'Pause' : 'Start';
+  $('#tmode').value = t.mode; $('#tmin').value = t.min; $('#tmin').hidden = t.mode !== 'timer'; }
+$('#tgo').onclick = () => { timer.run = !timer.run; clearInterval(timer.h); if (timer.run) timer.h = setInterval(() => { timer.sec += timer.up ? 1 : -1; tick(); if (!timer.up && timer.sec === 0) toast(`Time's up for ${STEPS[S.step][1]} - wrap up or take a minute more`); }, 1000); tick(); };
 $('#next').onclick = () => { if (S.step < STEPS.length - 1) goStep(S.step + 1); };
+const setStepTimer = (i, t) => { PSET.timers = Object.assign({}, PSET.timers, {[STEPS[i][0]]: t}); savePlanSettings(); };
+$('#tmode').onchange = e => { const c = stepTimer(S.step); setStepTimer(S.step, {mode: e.target.value, min: c.min}); resetTimer(); tick(); };
+$('#tmin').onchange = e => { const c = stepTimer(S.step); setStepTimer(S.step, {mode: c.mode, min: +e.target.value || c.min}); resetTimer(); tick(); };
+$('#msettings').onclick = () => { $('#mset').hidden = !$('#mset').hidden; $('#pset-poker').checked = !!PSET.poker; $('#pset-fist').checked = !!PSET.fist; };
+$('#mset').onchange = e => { if (e.target.id === 'pset-poker') PSET.poker = e.target.checked; else if (e.target.id === 'pset-fist') PSET.fist = e.target.checked; else return; savePlanSettings(); render(); };
 function renderMeeting() {
   $('#steps').innerHTML = STEPS.map(([k, label], i) => `<button class="step${i === S.step ? ' on' : ''}${i < S.step ? ' done' : ''}" data-step="${i}"><span class="n">${i < S.step ? '&#10003;' : i + 1}</span>${label}</button>`).join('');
   $('#team').innerHTML = people.map(p => `<span class="av" data-ready="${esc(p)}" style="--c:${colorOf(p)};cursor:pointer" title="${esc(p)}${S.ready[p] ? ' - ready' : ''}">${initials(p)}${S.ready[p] ? '<span class="ok">&#10003;</span>' : ''}</span>`).join('') +
@@ -632,7 +679,7 @@ function renderCalendar(el) {
     const first = new Date(wk[0] + 'T00:00:00Z').getUTCDay(), pads = '<div class="cday pad"></div>'.repeat(Math.max(0, first - 1));
     const end = 5 - (first - 1) - wk.length, wh = wk.reduce((a, d) => a + day(d).h, 0);
     return `<div class="wl">Week ${i + 1}<span class="sub" style="font-weight:400">${fmtDate(wk[0])}</span></div>${pads}${wk.map(d => { const x = day(d), pct = full ? x.h / full : 0, dt = new Date(d + 'T00:00:00Z');
-      const cls = !x.h ? ' none' : pct < .6 ? ' low' : '', fin = doneIdx >= 0 && ds[doneIdx] === d;
+      const cls = !x.h ? ' none' : pct < .6 ? ' low' : '', fin = totalWork > 0 && doneIdx >= 0 && ds[doneIdx] === d;
       return `<div class="cday${cls}${d === today ? ' today' : ''}" style="--a:${pct.toFixed(2)}" title="${esc(fmtDate(d))}: ${h1(x.h)} of ${h1(full)} team hours${x.offs.length ? '\nOff: ' + x.offs.map(o => o[0] + ' ' + o[1]).join(', ') : ''}">
         <div class="dn"><b>${dt.getUTCDate()}</b><span class="sub">${dt.toLocaleDateString(undefined, {month: 'short', timeZone: 'UTC'})}</span></div>
         <div class="hrs">${h1(x.h)} h${fin ? ' &middot; <b style="color:var(--ok)">&#127937; done</b>' : ''}</div><div class="mini"><i style="width:${Math.round(pct * 100)}%"></i></div>
@@ -707,6 +754,7 @@ const SPECIFIC = {
 const ROLES = ['customer', 'support agent', 'team admin', 'field engineer', 'finance user'];
 const WHY = ['I can finish my work without calling support', 'mistakes are caught before they reach customers', 'I spend less time on manual steps', 'the data I rely on stays accurate', 'it works the way I expect'];
 function detailsOf(it) {
+  if (REAL) return {story: it.descHtml || '<span class="sub">No description.</span>', acHtml: it.acHtml || '<span class="sub">No acceptance criteria.</span>'};
   const h = it.id % 5, title = it.title.replace(/ part \d+$/i, '');
   const specific = SPECIFIC[it.title] || [`a signed-in ${ROLES[h]}, when they use "${title.toLowerCase()}", then it completes without errors`];
   return {
@@ -721,11 +769,11 @@ function storyHtml(it, big) {
   const d = detailsOf(it), f = ancestor(it, 1), ep = ancestor(it, 0), ts = tasksOf(it), deps = (needs.get(it.id) || []).map(id => byId.get(id)).filter(Boolean);
   const hrs = ts.reduce((a, t) => a + (+t.remaining || 0), 0), pl = planned(it);
   return `<div class="us">${d.story}</div>
-    <div class="sect">Acceptance criteria <span class="sample">sample text in this demo</span></div>
-    <ol class="ac">${d.ac.map(a => `<li>${a}</li>`).join('')}</ol>
+    <div class="sect">Acceptance criteria${REAL ? '' : ' <span class="sample">sample text in this demo</span>'}</div>
+    ${d.acHtml != null ? `<div class="acx">${d.acHtml}</div>` : `<ol class="ac">${d.ac.map(a => `<li>${a}</li>`).join('')}</ol>`}
     <div class="sect">Details</div>
     <div class="sdet"><div><span>Type</span>${esc(it.type)}</div><div><span>State</span>${esc(it.state)}</div><div><span>Owner</span>${esc(pl.who || 'Unassigned')}</div>
-      <div><span>Feature</span>${esc(f ? f.title : '-')}</div><div><span>Epic</span>${esc(ep ? ep.title : '-')}</div><div><span>Area</span>${esc(it.area || '-')}</div>
+      <div><span>Feature</span>${esc(f ? f.title : '-')}</div><div><span>Epic</span>${esc(ep ? ep.title : '-')}</div><div><span>Area</span>${esc(it.area || '-')}</div>${it.lane ? `<div><span>Swim lane</span>${esc(it.lane)}</div>` : ''}
       <div><span>Planned for</span>${pl.sp >= 0 ? esc(SPR[pl.sp].name) : 'Backlog'}</div><div><span>Estimate</span>${pts(it) == null ? 'Not estimated' : pts(it) + ' pts'}</div>
       <div><span>Task hours</span>${ts.length ? h1(hrs) + ' h' : 'No tasks yet'}</div>${it.tags ? `<div><span>Tags</span>${esc(it.tags)}</div>` : ''}</div>
     ${ts.length ? `<div class="sect">Tasks</div><div class="tasks">${ts.map(t => `<span>${esc(t.title)} &middot; ${t.remaining} h${t.assignee ? ' &middot; ' + esc(t.assignee) : ''}</span>`).join('')}</div>` : ''}
@@ -735,6 +783,7 @@ function storyHtml(it, big) {
 const TASK_KINDS = {
   validation: {label: 'Validation', icon: '&#9989;', title: st => `Validate: ${st.title}`, hrs: 2},
   assist: {label: 'Assisting team member', icon: '&#129309;', title: st => `Assist ${(planned(st).who || 'the owner').split(' ')[0]}: ${st.title}`, hrs: 2},
+  uat: {label: 'UAT testing', icon: '&#129514;', title: st => `${UAT ? UAT.title : 'UAT testing'}: ${st.title}`, hrs: 2},
   custom: {label: 'Custom task', icon: '&#9998;', title: () => '', hrs: 4}
 };
 function suggestWho(st, kind) {
@@ -744,7 +793,7 @@ function suggestWho(st, kind) {
   return [...people].filter(p => kind === 'custom' || p !== owner).sort((a, b) => room(b) - room(a))[0] || owner || '';
 }
 function quickTaskHtml(st, kind) {
-  kind = kind || 'validation';
+  kind = kind || (needsUat(st) ? 'uat' : 'validation');
   const k = TASK_KINDS[kind], who = suggestWho(st, kind);
   return `<div class="qt" data-qt="${st.id}" data-kind="${kind}">
     <div class="qt-kinds">${Object.entries(TASK_KINDS).map(([key, v]) => `<button class="qt-k${key === kind ? ' on' : ''}" data-qtkind="${key}">${v.icon} ${v.label}</button>`).join('')}</div>
@@ -752,7 +801,7 @@ function quickTaskHtml(st, kind) {
     <div class="qt-row"><label class="sub">For <select class="qt-who">${people.map(p => `<option${p === who ? ' selected' : ''}>${esc(p)}</option>`).join('')}<option value="">Unassigned</option></select></label>
       <label class="sub">Hours <input type="number" class="qt-hrs" min="0" step="0.5" value="${k.hrs}"></label>
       <button class="btn primary" data-qtadd="${st.id}">Add task</button></div>
-    <div class="sub qt-note">${kind === 'validation' ? 'Someone other than the owner checks the acceptance criteria.' : kind === 'assist' ? 'Time a teammate spends helping the owner (pairing, reviews, answers).' : ''} Suggested: the teammate with the most free hours this sprint.</div></div>`;
+    <div class="sub qt-note">${kind === 'uat' ? `User acceptance testing${UAT ? ' for a story in the ' + esc(UAT.lane) + ' lane' : ''}.` : kind === 'validation' ? 'Someone other than the owner checks the acceptance criteria.' : kind === 'assist' ? 'Time a teammate spends helping the owner (pairing, reviews, answers).' : ''} Suggested: the teammate with the most free hours this sprint.</div></div>`;
 }
 let popId = null;
 // A look-alike of the Azure DevOps work item form. In a real extension this would open the actual form
@@ -768,32 +817,33 @@ function formHtml(it, meeting) {
   return `${meeting || ''}
   <div class="wif-head" style="--c:${TYPE_COLOR[it.type] || '#009ccc'}">
     <div class="wif-type"><span class="ico"></span>${esc(it.type.toUpperCase())} ${it.id}
-      <span class="wif-tools"><button class="btn" disabled title="Demo - nothing is saved to Azure DevOps">Save &amp; Close</button><button class="btn" id="popclose" title="Close (Esc)">&times;</button></span></div>
+      <span class="wif-tools">${REAL ? `<button class="btn" data-adoopen="${it.id}" title="Open the work item form in Azure DevOps">Open in Azure DevOps &#8599;</button>` : '<button class="btn" disabled title="Demo - nothing is saved to Azure DevOps">Save &amp; Close</button>'}<button class="btn" id="popclose" title="Close (Esc)">&times;</button></span></div>
     <div class="wif-title">${esc(it.title)}</div>
-    <div class="wif-who">${av(who, 'sm')}<span>${esc(who || 'Unassigned')}</span><span class="sub">&#128172; 0 comments</span>${it.tags ? `<span>${esc(it.tags)}</span>` : '<span class="tagadd">+ Add tag</span>'}${it.sample ? '<span class="tag new">sample</span>' : ''}</div>
+    <div class="wif-who">${av(who, 'sm')}<span>${esc(who || 'Unassigned')}</span>${REAL ? '' : '<span class="sub">&#128172; 0 comments</span>'}${it.tags ? `<span>${esc(it.tags)}</span>` : '<span class="tagadd">+ Add tag</span>'}${it.sample ? '<span class="tag new">sample</span>' : ''}</div>
   </div>
   <div class="wif-fields">
     <div class="wif-f"><span>State</span><b><span class="sdot" style="--sc:${stateColor(it.state)}"></span>${esc(it.state)}</b></div>
     <div class="wif-f"><span>Area</span><b title="${esc(it.area)}">${esc(it.area || D.project)}</b></div>
-    <div class="wif-f"><span>Reason</span><b>${esc(reason)}</b></div>
+    ${REAL ? `<div class="wif-f"><span>Points</span><b>${pts(it) == null ? 'Not estimated' : pts(it)}</b></div>` : `<div class="wif-f"><span>Reason</span><b>${esc(reason)}</b></div>`}
     <div class="wif-f"><span>Iteration</span><b title="${esc(iter)}">${esc(iter)}</b></div>
   </div>
-  <div class="wif-tabs"><span class="on">Details</span><span>History</span><span>Links (${(f ? 1 : 0) + ts.length + deps.length + succ.length})</span><span>Attachments (0)</span></div>
+  <div class="wif-tabs"><span class="on">Details</span>${REAL ? '' : `<span>History</span><span>Links (${(f ? 1 : 0) + ts.length + deps.length + succ.length})</span><span>Attachments (0)</span>`}</div>
   <div class="wif-body">
     <div class="wif-main">
       <div class="wif-sec"><h4>Description</h4><div class="wif-rich">${d.story}</div></div>
-      <div class="wif-sec"><h4>Acceptance Criteria <span class="sample">sample text in this demo</span></h4><div class="wif-rich"><ol>${d.ac.map(a => `<li>${a}</li>`).join('')}</ol></div></div>
-      <div class="wif-sec"><h4>Discussion</h4><div class="wif-disc">${av(people[0], 'sm')}<div class="box">Add a comment. Use # to link a work item, @ to mention a person.</div></div></div>
+      <div class="wif-sec"><h4>Acceptance Criteria${REAL ? '' : ' <span class="sample">sample text in this demo</span>'}</h4><div class="wif-rich">${d.acHtml != null ? d.acHtml : `<ol>${d.ac.map(a => `<li>${a}</li>`).join('')}</ol>`}</div></div>
+      ${REAL ? '' : `<div class="wif-sec"><h4>Discussion</h4><div class="wif-disc">${av(people[0], 'sm')}<div class="box">Add a comment. Use # to link a work item, @ to mention a person.</div></div></div>`}
     </div>
     <div class="wif-side">
       <div class="wif-sec"><h4>Planning</h4><div class="wif-card wif-kv">
         <span>Story Points</span><b class="big">${pts(it) == null ? '&nbsp;' : pts(it)}</b>
-        <span>Priority</span><b>${it.id % 3 + 1}</b>
-        <span>Risk</span><b>${['1 - High', '2 - Medium', '3 - Low'][it.id % 3]}</b>
+        ${it.lane ? `<span>Swim lane</span><b>${esc(it.lane)}</b>` : ''}
+        ${REAL ? '' : `<span>Priority</span><b>${it.id % 3 + 1}</b>
+        <span>Risk</span><b>${['1 - High', '2 - Medium', '3 - Low'][it.id % 3]}</b>`}
         <span>Remaining work</span><b>${ts.length ? h1(hrs) + ' h in ' + ts.length + ' task' + (ts.length > 1 ? 's' : '') : 'No tasks yet'}</b></div></div>
-      <div class="wif-sec"><h4>Classification</h4><div class="wif-card wif-kv"><span>Value area</span><b>${it.id % 4 ? 'Business' : 'Architectural'}</b></div></div>
-      <div class="wif-sec"><h4>Development</h4><div class="wif-card"><div class="wif-add">+ Add link</div><div class="sub" style="margin-top:4px">Link an Azure Repos commit, pull request or branch to see the status of your development.</div></div></div>
-      <div class="wif-sec"><h4>Related Work</h4><div class="wif-card"><div class="wif-add">+ Add link</div>
+      ${REAL ? '' : `<div class="wif-sec"><h4>Classification</h4><div class="wif-card wif-kv"><span>Value area</span><b>${it.id % 4 ? 'Business' : 'Architectural'}</b></div></div>
+      <div class="wif-sec"><h4>Development</h4><div class="wif-card"><div class="wif-add">+ Add link</div><div class="sub" style="margin-top:4px">Link an Azure Repos commit, pull request or branch to see the status of your development.</div></div></div>`}
+      <div class="wif-sec"><h4>Related Work</h4><div class="wif-card">${REAL ? '' : '<div class="wif-add">+ Add link</div>'}
         ${f ? `<div class="wif-grp">Parent</div>${link(f)}` : ''}
         ${ts.length ? `<div class="wif-grp">Child</div>${ts.map(t => link(t, ` &middot; ${t.remaining} h${t.assignee ? ' &middot; ' + esc(t.assignee) : ''}${t.isNewTask ? ` <span class="tag new">new</span> <button class="rm" data-qtdel="${t.id}" title="Remove this new task">&times;</button>` : ''}`)).join('')}` : ''}
         <div class="wif-grp">Add a task</div>${quickTaskHtml(it)}
@@ -825,6 +875,7 @@ function storyWindow(id) {
 
 // ---------- 3. planning poker ----------
 const DECK = [1, 2, 3, 5, 8, 13, 21, '?'];
+const POKER_SUB = $('#pokersub').innerHTML, COMMIT_SUB = $('#commitsub').innerHTML;
 let poker = {id: null, votes: {}, shown: false};
 const pokerQueue = () => D.items.filter(it => isStory(it) && it.bucket !== 'done' && (planned(it).sp === target || planned(it).sp < 0 || planned(it).sp > curIdx))
   .sort((a, b) => (pts(a) == null ? 0 : 1) - (pts(b) == null ? 0 : 1) || (planned(b).sp === target) - (planned(a).sp === target) || a.id - b.id);
@@ -833,6 +884,13 @@ function renderPoker() {
   $('#queue').innerHTML = q.map(it => `<div class="wi" data-pick="${it.id}" style="cursor:pointer;${it.id === poker.id ? 'outline:2px solid var(--accent)' : ''}"><span class="id">#${it.id}</span><span class="t">${esc(it.title)}</span><span class="pts${pts(it) == null ? ' none' : ''}">${pts(it) == null ? '?' : pts(it)}</span></div>`).join('');
   const it = byId.get(poker.id);
   if (!it) { $('#pokerbody').innerHTML = '<p class="sub">Nothing to estimate.</p>'; return; }
+  $('#pokersub').innerHTML = PSET.poker ? POKER_SUB : "Enter each story's estimate. Nobody votes: the points you save are the estimate.";
+  $('#pokerh').textContent = PSET.poker ? '3. Planning poker' : '3. Estimate';
+  if (!PSET.poker) { $('#pokerbody').innerHTML = `<div class="sub">#${it.id} &middot; ${esc(it.type)} &middot; ${esc((ancestor(it, 1) || {}).title || '')}${pts(it) != null ? ` &middot; currently ${pts(it)} pts` : ' &middot; not estimated'}</div>
+    <div class="story">${esc(it.title)}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><label class="sub">Estimate (points) <input type="number" id="est-in" min="0" step="1" value="${pts(it) != null ? pts(it) : ''}" style="width:90px"></label>
+      <button class="btn primary" data-entered="${it.id}">Save estimate</button><span class="grow"></span><button class="btn" id="skip">Next story</button></div>
+    <details open><summary class="sub" style="cursor:pointer">Story, acceptance criteria and details</summary>${storyHtml(it)}</details>`; return; }
   const votes = poker.votes, voted = people.filter(p => votes[p] != null), nums = voted.map(p => votes[p]).filter(v => v !== '?');
   let verdict = '';
   if (poker.shown && nums.length) {
@@ -903,6 +961,8 @@ function renderBoard() {
     if (t > cp.cap * 1.05) out.push(['var(--bad)', `${esc(p)}: ${h1(t)} h of work, ${h1(cp.cap)} h available.`]);
     else if (cp.cap && t < cp.cap * .5) out.push(['var(--muted)', `${esc(p)} has room: ${h1(cp.cap - t)} h free.`]); });
   if ((w.get('') || {task: 0}).task) out.push(['var(--warn)', `${h1(w.get('').task)} h of tasks have no owner.`]);
+  const uatNeed = items.filter(needsUat);
+  if (uatNeed.length) out.push(['var(--warn)', `${uatNeed.length} stor${uatNeed.length === 1 ? 'y' : 'ies'} in the ${esc(UAT.lane)} lane ha${uatNeed.length === 1 ? 's' : 've'} no UAT testing task. <button class="btn" data-draftuat="1">Draft ${uatNeed.length === 1 ? 'it' : 'them'}</button>`]);
   items.forEach(it => issuesOf(it).forEach(([k, t]) => out.push([k === 'bad' ? 'var(--bad)' : 'var(--warn)', `#${it.id} ${esc(it.title.slice(0, 34))}: ${esc(t)}`])));
   $('#checks').innerHTML = out.length ? out.map(([c, t]) => `<div class="check"><span class="dot" style="--c:${c}"></span><span>${t}</span></div>`).join('') : '<div class="sub">&#9989; All clear.</div>';
 }
@@ -910,16 +970,18 @@ function renderBoard() {
 // ---------- 5. confidence vote ----------
 function renderCommit() {
   renderCalendar($('#cal5'));
+  $('#commith').textContent = PSET.fist ? '5. Confidence vote' : '5. Commit';
+  $('#commitsub').innerHTML = PSET.fist ? COMMIT_SUB : 'Review the plan below and commit it. The confidence vote is off for this team.';
   const F = S.fist, voted = people.filter(p => F[p]), avg = voted.length ? voted.reduce((a, p) => a + F[p], 0) / voted.length : 0;
-  $('#fists').innerHTML = people.map(p => `<div class="fist">${av(p)}<span>${esc(p)}</span><div class="f5">${[1, 2, 3, 4, 5].map(n => `<button class="${F[p] === n ? 'on' : ''}" data-fist="${esc(p)}" data-n="${n}" title="${n}">${['', '&#9994;', '&#9757;', '&#9996;', '&#129311;', '&#9995;'][n]}</button>`).join('')}</div></div>`).join('') +
+  $('#fists').innerHTML = !PSET.fist ? '<p class="sub" style="margin:0">The confidence vote is off for this team. Turn it on under Meeting settings to vote before committing.</p>' : people.map(p => `<div class="fist">${av(p)}<span>${esc(p)}</span><div class="f5">${[1, 2, 3, 4, 5].map(n => `<button class="${F[p] === n ? 'on' : ''}" data-fist="${esc(p)}" data-n="${n}" title="${n}">${['', '&#9994;', '&#9757;', '&#9996;', '&#129311;', '&#9995;'][n]}</button>`).join('')}</div></div>`).join('') +
     `<div><button class="btn" id="simfist">Fill in the team's votes (demo)</button></div>`;
   const items = inSprint(), w = work(), wt = [...w.values()].reduce((a, r) => a + r.task + r.est, 0), capT = people.reduce((a, p) => a + capacity(p).cap, 0);
   const done = S.committed[target];
-  $('#verdict').innerHTML = `<div class="sub">Team confidence</div><div class="meter">${voted.length ? avg.toFixed(1) : '&ndash;'}<span class="sub"> / 5</span></div>
-    <div class="sub" style="text-align:center">${voted.length}/${people.length} voted</div>
+  $('#verdict').innerHTML = `${PSET.fist ? `<div class="sub">Team confidence</div><div class="meter">${voted.length ? avg.toFixed(1) : '&ndash;'}<span class="sub"> / 5</span></div>
+    <div class="sub" style="text-align:center">${voted.length}/${people.length} voted</div>` : ''}
     <p>${items.length} items &middot; ${items.reduce((a, it) => a + (+pts(it) || 0), 0)} pts &middot; ${h1(wt)} h of ${h1(capT)} h capacity</p>
     ${done ? `<p>&#127881; <b>Committed!</b> ${esc(SPR[target].name)} is planned. Export the changes to apply them in Azure DevOps.</p>` :
-      voted.length === people.length ? (avg >= 3.5 ? `<button class="btn primary" id="commit" style="width:100%">Commit to ${esc(SPR[target].name)} &#128640;</button>`
+      (!PSET.fist || voted.length === people.length) ? (!PSET.fist || avg >= 3.5 ? `<button class="btn primary" id="commit" style="width:100%">Commit to ${esc(SPR[target].name)} &#128640;</button>`
         : `<p>&#129300; Confidence is low. Go back to <a href="#" data-step="3">Fill the sprint</a>, take something out, and vote again.</p>`) : '<p class="sub">Waiting for everyone to vote.</p>'}`;
 }
 
@@ -962,7 +1024,8 @@ $('#splen').onchange = e => { const L = load('len', {}); L[target] = +e.target.v
   render(); toast(`${SPR[target].name} is now ${e.target.value} week${e.target.value > 1 ? 's' : ''} (demo)`); };
 $('#q').oninput = renderBoard; $('#group').onchange = renderBoard;
 $('#swimrows').onchange = e => { swimRows = e.target.value; save('swimRows', swimRows); renderBoard(); };
-$('#reset').onclick = () => { if (!confirm('Start over? This clears the plan, estimates, votes and capacity in this browser and brings back the example sprint.')) return;
+if (REAL) { $('#reset').textContent = 'Discard changes'; $('#reset').title = 'Throw away unsaved changes and reload from Azure DevOps'; }
+$('#reset').onclick = () => { if (!confirm(REAL ? 'Discard your unsaved plan changes and reload from Azure DevOps?' : 'Start over? This clears the plan, estimates, votes and capacity in this browser and brings back the example sprint.')) return;
   ['plan', 'est', 'cap', 'meeting', 'len', 'target', 'newtasks'].forEach(k => { try { localStorage.removeItem(KEY + '.' + k); } catch (e) {} }); location.reload(); };
 $('#export').onclick = () => {
   const rows = [['ID', 'Title', 'Change', 'From', 'To']], name = i => i >= 0 ? SPR[i].path : D.project;
@@ -992,6 +1055,11 @@ document.addEventListener('click', e => {
   else if (d.add) { const it = byId.get(+d.add); setPlan(it.id, target, planned(it).who); }
   else if (d.out) { const it = byId.get(+d.out); setPlan(it.id, -1, planned(it).who); }
   else if (d.open) { openStory(+d.open); if (d.focus === 'qt') { const q = document.querySelector('#mbox .qt'); if (q) { q.scrollIntoView({block: 'center'}); q.querySelector('.qt-title').focus(); } } }
+  else if (d.draftuat) {   // a UAT testing task for each story in the UAT lane without one; created on Save plan like any new task
+    const list = inSprint().filter(needsUat);
+    list.forEach(st => { const task = {id: Math.max(9800, ...NT.map(x => x.id + 1)), parent: st.id, title: TASK_KINDS.uat.title(st), who: suggestWho(st, 'uat'), hrs: TASK_KINDS.uat.hrs, kind: 'uat'};
+      while (byId.has(task.id)) task.id++; NT.push(task); addTaskItem(task); });
+    save('newtasks', NT); toast(`Drafted ${list.length} UAT testing task${list.length === 1 ? '' : 's'}. ${REAL ? 'They are created when you Save plan.' : ''}`); render(); }
   else if (d.qtkind) { const box = t.closest('.qt'), st = byId.get(+box.dataset.qt); box.outerHTML = quickTaskHtml(st, d.qtkind); }
   else if (d.qtadd) {
     const box = t.closest('.qt'), st = byId.get(+d.qtadd), title = box.querySelector('.qt-title').value.trim(), hrs = Math.max(0, +box.querySelector('.qt-hrs').value || 0);
@@ -1017,6 +1085,7 @@ document.addEventListener('click', e => {
   else if (t.id === 'skip') { nextPoker(); renderPoker(); }
   else if (t.id === 'simulate') { const it = byId.get(poker.id), base = pts(it) != null ? pts(it) : [2, 3, 5, 8][it.id % 4];
     people.forEach(p => { if (poker.votes[p] == null) { const i = DECK.indexOf(base) + Math.round((Math.random() - .5) * 1.6); poker.votes[p] = DECK[Math.max(0, Math.min(6, i))]; } }); renderPoker(); }
+  else if (d.entered) { const v = $('#est-in').value; if (v === '') { toast('Enter the points first.'); return; } E[+d.entered] = +v; save('est', E); toast(`#${d.entered} estimated at ${v} points`); nextPoker(); renderKpis(); renderPoker(); }
   else if (d.agree) { E[poker.id] = +d.agree; save('est', E); toast(`#${poker.id} estimated at ${d.agree} points`); nextPoker(); renderKpis(); renderPoker(); }
   else if (t.id === 'carryAll') { D.items.filter(it => isStory(it) && it.sp === target - 1 && it.bucket !== 'done').forEach(it => { P[it.id] = {sp: target, who: planned(it).who}; }); save('plan', P); render(); }
   else if (d.weekoff != null || d.teamweek != null) {
@@ -1068,7 +1137,7 @@ function prefill() {
 }
 let freshExample = false;
 try { freshExample = localStorage.getItem(KEY + '.plan') === null; } catch (e) {}
-if (freshExample && EX >= 0 && target === EX && String(SPR[EX].start).slice(0, 10) === EX_START) { prefill(); save('plan', P); }
+if (!REAL && freshExample && EX >= 0 && target === EX && String(SPR[EX].start).slice(0, 10) === EX_START) { prefill(); save('plan', P); }
 
 // Collapsible navigation, remembered in this browser
 function setNav(min) {
@@ -1080,6 +1149,101 @@ function setNav(min) {
 $$('.adonav .ni').forEach(a => { if (!a.title) a.title = a.textContent.trim(); });
 $('#navtoggle').onclick = $('#navtoggle2').onclick = () => setNav(!$('.shell').classList.contains('navmin'));
 try { setNav(localStorage.getItem('adomap.planning.nav') === 'min'); } catch (e) { setNav(false); }
+
+// ---------- Save plan (real hub): write the changes to Azure DevOps
+function pendingChanges() {
+  const moves = Object.entries(P).map(([id, p]) => ({id: +id, sp: p.sp, who: p.who})).filter(m => { const it = byId.get(m.id); return it && (m.sp !== it.sp || m.who !== (it.assignee || '')); });
+  const estimates = Object.entries(E).map(([id, v]) => ({id: +id, pts: v})).filter(x => byId.has(x.id) && byId.get(x.id).points !== x.pts);
+  const tasks = NT.map(t => { const st = byId.get(t.parent); return {parent: t.parent, title: t.title, who: t.who, hrs: t.hrs, sp: st ? planned(st).sp : -1, uncertainAt: t.uncertainAt, createAnyway: !!t.createAnyway}; });
+  const cap = PAPI ? PAPI.capacityChanges(C) : [];
+  return {moves, estimates, tasks, cap, count: moves.length + estimates.length + tasks.length + cap.length};
+}
+// Preview: Save plan is off until someone turns it on for this project, in this browser, next to the button
+const SAVE_ON = KEY + '.saveOn';
+const saveOn = () => { try { return localStorage.getItem(SAVE_ON) === '1'; } catch (e) { return false; } };
+const PREVIEW_WARN = 'Not yet validated against a live Azure DevOps organization. Use a disposable or non-critical project.';
+function refreshSaveButton() { if (!REAL) return; const n = pendingChanges().count;
+  $('#saveplan').textContent = (n ? `Save plan (${n})` : 'Save plan') + (saveOn() ? '' : ' \u00b7 off');
+  $('#saveplan').title = saveOn() ? 'Write the plan\'s changes to Azure DevOps' : 'Save plan is off in this preview. Click to read why and turn it on.'; }
+function saveDialog(html) { $('#saveinner').innerHTML = html; $('#savebox').hidden = false; }
+// A task an earlier save may or may not have created, with similar but different tasks found: the user decides
+const decideHtml = t => `<div class="decide" data-draft="${t.id}" style="margin:6px 0">"${esc(t.title)}" under #${t.parent}: an earlier save may have created it. ` +
+  `${t.similar.map(i => `<a href="#" data-adoopen="${i}">#${i}</a>`).join(', ')} ${t.similar.length === 1 ? 'looks' : 'look'} similar but not the same.<br>` +
+  `${t.similar.map(i => `<button class="btn" data-decide="use" data-id="${i}">Use #${i}</button>`).join(' ')} <button class="btn" data-decide="new">Create a separate task</button> <button class="btn" data-decide="drop">Remove draft</button></div>`;
+const undecided = () => NT.filter(t => t.uncertainAt && (t.similar || []).length && !t.createAnyway);
+function dropDraft(id) {
+  NT = NT.filter(x => x.id !== id); save('newtasks', NT);
+  const tk = byId.get(id); if (!tk || !tk.isNewTask) return;
+  const st = byId.get(tk.parent); if (st) st.children = st.children.filter(x => x !== id);
+  byId.delete(id); D.items.splice(D.items.indexOf(tk), 1);
+}
+if (REAL) {
+  $('#saveplan').hidden = false;
+  $('#saveplan').onclick = () => {
+    if (!saveOn()) {
+      saveDialog(`<h3>Save plan is off in this preview</h3><p><b>${PREVIEW_WARN}</b></p>
+        <div class="sub">Until it's on, nothing is written to Azure DevOps: your plan is kept in this browser, and everything else works as usual. When it's on, every save still shows you each change first.</div>
+        <p><label><input type="checkbox" id="saveack"> I understand. Turn on Save plan for the ${esc(D.team || 'team')} team's plans, in this browser.</label></p>
+        <div class="acts"><button class="btn" id="savecancel">Keep it off</button><button class="btn primary" id="saveon" disabled>Turn on Save plan</button></div>`);
+      return;
+    }
+    const ch = pendingChanges();
+    if (!ch.count) { toast('Nothing to save - the plan matches Azure DevOps.'); return; }
+    const li = (n, what, rows) => n ? `<li><b>${n}</b> ${what}${rows ? `<div class="sub">${rows.slice(0, 8).join('<br>')}${rows.length > 8 ? `<br>and ${rows.length - 8} more` : ''}</div>` : ''}</li>` : '';
+    const nm = id => { const it = byId.get(id); return it ? `#${id} ${esc(it.title.slice(0, 60))}` : '#' + id; };
+    const spn = i => i >= 0 && D.sprints[i] ? esc(D.sprints[i].name) : 'backlog';
+    saveDialog(`<h3>Save the plan to Azure DevOps?</h3><div class="sub">For the ${esc(D.team || 'team')} team. Everyone will see these changes.</div><ul>
+      ${li(ch.moves.length, 'stories moved between sprints or given a new owner', ch.moves.map(m => { const it = byId.get(m.id);
+        return `${nm(m.id)}: ${m.sp !== it.sp ? spn(it.sp) + ' &rarr; ' + spn(m.sp) : ''}${m.sp !== it.sp && m.who !== (it.assignee || '') ? ', ' : ''}${m.who !== (it.assignee || '') ? esc(it.assignee || 'unassigned') + ' &rarr; ' + esc(m.who || 'unassigned') : ''}`; }))}
+      ${li(ch.estimates.length, 'new estimates', ch.estimates.map(x => `${nm(x.id)}: ${byId.get(x.id).points ?? 'none'} &rarr; ${x.pts}`))}
+      ${li(ch.tasks.length, 'new tasks, linked to their stories', ch.tasks.map(t => `"${esc(t.title)}" under ${nm(t.parent)}`))}
+      ${li(ch.cap.length, 'capacity or days-off updates', ch.cap.map(x => `${spn(x.sp)}: ${x.kind === 'team' ? 'team days off' : x.kind === 'partial' ? esc(x.who || 'team') + ', partial days off'
+        : esc(x.who) + ', ' + (x.from !== x.to ? `${x.from} &rarr; ${x.to} h/day${x.split ? ` (${esc(x.split)})` : ''}` : 'days off') + (x.invalid ? ` <b style="color:var(--bad)">won't save:</b> ${esc(x.invalid)}` : '')}`))}</ul>
+      ${ch.cap.some(x => x.kind === 'partial') ? '<div class="sub">Partial days off (half days, hours) are kept by this extension only: Azure DevOps\' own Capacity page shows whole days.</div>' : ''}
+      ${(D.capacityWarnings || []).length ? `<div class="err">${D.capacityWarnings.map(esc).join('<br>')}</div>` : ''}
+      ${undecided().length ? `<div class="err"><b>Decide first:</b>${undecided().map(decideHtml).join('')}Until you choose, these drafts aren't created.</div>` : ''}
+      <div class="sub">A story, or a person's capacity, that someone else changed since you opened the hub isn't overwritten - you'll be told which.</div>
+      <div class="sub"><b>Preview:</b> ${PREVIEW_WARN} <a href="#" id="saveoff">Turn Save plan off</a></div>
+      <div class="acts"><button class="btn" id="savecancel">Cancel</button><button class="btn primary" id="savego">Save</button></div>`);
+  };
+}
+document.addEventListener('click', async e => {
+  if (e.target.id === 'savecancel' || e.target.id === 'saveclose') { $('#savebox').hidden = true; if (e.target.id === 'saveclose') location.reload(); return; }
+  const ado = e.target.closest('[data-adoopen]'); if (ado && PAPI) { e.preventDefault(); PAPI.openWorkItem(+ado.dataset.adoopen); return; }
+  if (e.target.id === 'saveon') { try { localStorage.setItem(SAVE_ON, '1'); } catch (err) {} refreshSaveButton(); $('#saveplan').onclick(); return; }
+  if (e.target.id === 'saveoff') { e.preventDefault(); try { localStorage.removeItem(SAVE_ON); } catch (err) {} $('#savebox').hidden = true; refreshSaveButton(); toast('Save plan is off. Your plan stays in this browser.'); return; }
+  const dec = e.target.closest('[data-decide]');
+  if (dec) {
+    const box = dec.closest('[data-draft]'), t = NT.find(x => x.id === +box.dataset.draft); if (!t) return;
+    if (dec.dataset.decide === 'new') { delete t.uncertainAt; delete t.similar; t.createAnyway = true; save('newtasks', NT); box.textContent = `"${t.title}" will be created as a separate task when you save.`; }
+    else { dropDraft(t.id); box.textContent = dec.dataset.decide === 'use' ? `Using #${dec.dataset.id}: the draft was removed.` : `"${t.title}": the draft was removed.`; }
+    render(); return;
+  }
+  if (e.target.id !== 'savego' || !saveOn()) return;
+  const ch = pendingChanges();
+  e.target.disabled = true; e.target.textContent = 'Saving...';
+  let res;
+  try { res = await PAPI.save({moves: ch.moves, estimates: ch.estimates, tasks: ch.tasks, capacity: C}); }
+  catch (err) { res = {saved: {moves: [], estimates: [], tasks: [], capacity: false}, errors: [err.message || String(err)]}; }
+  // forget what was saved; keep anything that failed so it can be tried again
+  res.saved.moves.forEach(id => delete P[id]); res.saved.estimates.forEach(id => delete E[id]);
+  // a draft whose create had an unknown outcome is marked, so the next save looks for it before creating it
+  (res.uncertain || []).forEach(k => { if (NT[k]) { NT[k].uncertainAt = res.attemptAt; delete NT[k].createAnyway; delete NT[k].similar; } });
+  (res.ambiguous || []).forEach(a => { if (NT[a.k]) NT[a.k].similar = a.ids; });   // stays unresolved until the user chooses
+  NT = NT.filter((t, k) => !res.saved.tasks.includes(k));
+  save('plan', P); save('est', E); save('newtasks', NT);
+  if (res.saved.capacity && !res.errors.some(x => /^Capacity/.test(x))) { try { localStorage.removeItem(KEY + '.cap'); } catch (err) {} }
+  const ok = res.saved.moves.length + res.saved.estimates.length + res.saved.tasks.length + (res.saved.capacity ? 1 : 0);
+  const decide = undecided();
+  saveDialog(res.errors.length || decide.length
+    ? `<h3>Saved with problems</h3><p>${ok ? 'Some changes were saved.' : 'Nothing could be saved.'} These need another look:</p><div class="err">${res.errors.map(x => `<div>&bull; ${esc(x)}</div>`).join('')}${decide.map(decideHtml).join('')}</div>
+       <div class="acts"><button class="btn primary" id="saveclose">Reload from Azure DevOps</button></div>`
+    : `<h3>&#9989; Saved to Azure DevOps</h3><p>The plan is in Azure DevOps now. Reloading so you see it as everyone else does.</p>${(res.notes || []).length ? `<div class="sub">${res.notes.map(esc).join('<br>')}</div>` : ''}<div class="acts"><button class="btn primary" id="saveclose">Reload</button></div>`);
+});
+if (REAL && (D.capacityWarnings || []).length) { $('#capwarn').hidden = false; $('#capwarn').innerHTML = D.capacityWarnings.map(esc).join('<br>'); }
+document.addEventListener('change', e => { if (e.target.id === 'saveack') $('#saveon').disabled = !e.target.checked; });
+const renderWithSave = render;
+render = function () { renderWithSave(); refreshSaveButton(); };
 
 tick(); render();
 </script>
